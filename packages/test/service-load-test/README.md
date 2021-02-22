@@ -72,3 +72,7 @@ The value passed here should be a filter string for the logger namespace.
 
 >To print all messages, provide `--log '*'` or `--log 'fluid:*'`. For example, to filter to only Container logs,
 provide something like: `-l 'fluid:telemetry:Container:*'`.
+
+
+#### --numDoc, -z
+By using this parameter we can create z number of documents, By default it's value is 1. All the configuration in [testConfig.json](./testConfig.json) is per document.for instance if numDoc is 2 then totalSendCount will be 2X.
