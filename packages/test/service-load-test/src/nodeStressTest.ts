@@ -114,15 +114,15 @@ async function main() {
         .option("-r, --runId <runId>", "run a child process with the given id. Requires --url option.")
         .option("-d, --debug", "Debug child processes via --inspect-brk")
         .option("-l, --log <filter>", "Filter debug logging. If not provided, uses DEBUG env variable.")
+        .option("-z, --numDoc <numDoc>", "If it is not provided then default value as 1 will be used.")
         .parse(process.argv);
-
     const tenantArg: string = commander.tenant;
     const profileArg: string = commander.profile;
     const url: string | undefined = commander.url;
     const runId: number | undefined = commander.runId === undefined ? undefined : parseInt(commander.runId, 10);
     const debug: true | undefined = commander.debug;
     const log: string | undefined = commander.log;
-
+    const numDoc: number | undefined = commander.numDoc === undefined ? 1 : parseInt(commander.numDoc, 10);
     let config: ITestConfig;
     try {
         config = JSON.parse(fs.readFileSync("./testConfig.json", "utf-8"));
@@ -162,7 +162,6 @@ async function main() {
     if (log !== undefined) {
         process.env.DEBUG = log;
     }
-
     let result: number;
     // When runId is specified (with url), kick off a single test runner and exit when it's finished
     if (runId !== undefined) {
@@ -178,7 +177,7 @@ async function main() {
     result = await orchestratorProcess(
         { ...loginInfo, tenantFriendlyName: tenantArg },
         { ...profile, name: profileArg },
-        { url, debug });
+        { url, numDoc, debug });
     process.exit(result);
 }
 
@@ -213,8 +212,16 @@ async function runnerProcess(
 async function orchestratorProcess(
     loginInfo: IOdspTestLoginInfo & { tenantFriendlyName: string },
     profile: ILoadTestConfig & { name: string },
-    args: { url?: string, debug?: true },
+    args: { url?: string, numDoc?: number, debug?: true },
 ): Promise<number> {
+    const currentdate = new Date();
+    const startDatetime = `Last Sync: ${  currentdate.getDate().toString()  }/${
+                 (currentdate.getMonth() + 1).toString()   }/${
+                 currentdate.getFullYear().toString()  } @ ${
+                 currentdate.getHours().toString()  }:${
+                 currentdate.getMinutes().toString()  }:${
+                 currentdate.getSeconds().toString()}`;
+    const numDoc = args.numDoc === undefined ? 1 : args.numDoc;
     let odspTokens: IOdspTokens;
     try {
         // Ensure fresh tokens here so the test runners have them cached
@@ -248,38 +255,52 @@ async function orchestratorProcess(
         throw ex;
     }
 
-    // Automatically determine driveId based on the server and user
-    const driveId = await getDriveId(loginInfo.server, "", undefined, { accessToken: odspTokens.accessToken });
-
-    // Create a new file if a url wasn't provided
-    const url = args.url ?? await initialize(driveId, loginInfo);
-
-    const estRunningTimeMin = Math.floor(2 * profile.totalSendCount / (profile.opRatePerMin * profile.numClients));
-    console.log(`Connecting to ${args.url ? "existing" : "new"} Container targeting dataStore with URL:\n${url}`);
-    console.log(`Authenticated as user: ${loginInfo.username}`);
-    console.log(`Selected test profile: ${profile.name}`);
-    console.log(`Estimated run time: ${estRunningTimeMin} minutes\n`);
-
     const p: Promise<void>[] = [];
-    for (let i = 0; i < profile.numClients; i++) {
-        const childArgs: string[] = [
-            "./dist/nodeStressTest.js",
-            "--tenant", loginInfo.tenantFriendlyName,
-            "--profile", profile.name,
-            "--runId", i.toString(),
-            "--url", url];
-        if (args.debug) {
-            const debugPort = 9230 + i; // 9229 is the default and will be used for the root orchestrator process
-            childArgs.unshift(`--inspect-brk=${debugPort}`);
+
+    for (let docIndex = 0; docIndex < numDoc; docIndex++) {
+        // Automatically determine driveId based on the server and user
+        const driveId = await getDriveId(loginInfo.server, "", undefined, { accessToken: odspTokens.accessToken });
+
+        // Create a new file if a url wasn't provided
+        const url = args.url ?? await initialize(driveId, loginInfo);
+        const estRunningTimeMin = Math.floor(2 * profile.totalSendCount /
+            (profile.opRatePerMin * profile.numClients));
+        console.log(`${docIndex + 1} ---> Connecting to ${args.url ? "existing" : "new"}` +
+         `Container targeting dataStore with URL:\n${url}`);
+        console.log(`Authenticated as user: ${loginInfo.username}`);
+        console.log(`Selected test profile: ${profile.name}`);
+        console.log(`Estimated run time: ${estRunningTimeMin} minutes\n`);
+
+        for (let i = 0; i < profile.numClients; i++) {
+            const childArgs: string[] = [
+                "./dist/nodeStressTest.js",
+                "--tenant", loginInfo.tenantFriendlyName,
+                "--profile", profile.name,
+                "--runId", (docIndex * profile.numClients + i).toString(),
+                "--url", url];
+            if (args.debug) {
+                const debugPort = 9230 + i; // 9229 is the default and will be used for the root orchestrator process
+                childArgs.unshift(`--inspect-brk=${debugPort}`);
+            }
+            const process = child_process.spawn(
+                "node",
+                childArgs,
+                { stdio: "inherit" },
+            );
+            p.push(new Promise((resolve) => process.on("close", resolve)));
         }
-        const process = child_process.spawn(
-            "node",
-            childArgs,
-            { stdio: "inherit" },
-        );
-        p.push(new Promise((resolve) => process.on("close", resolve)));
     }
     await Promise.all(p);
+    const currentdate_end = new Date();
+    const endDatetime = `Last Sync: ${  currentdate_end.getDate().toString()  }/${
+                 (currentdate_end.getMonth() + 1).toString()  }/${
+                 currentdate_end.getFullYear().toString()  } @ ${
+                 currentdate_end.getHours().toString()  }:${
+                 currentdate_end.getMinutes().toString()  }:${
+                 currentdate_end.getSeconds().toString()}`;
+    console.log(`Start Time : ${startDatetime}`);
+    console.log(`End Time : ${endDatetime}`);
+
     return 0;
 }
 
