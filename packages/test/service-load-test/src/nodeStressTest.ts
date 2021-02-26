@@ -276,7 +276,7 @@ async function orchestratorProcess(
                 "./dist/nodeStressTest.js",
                 "--tenant", loginInfo.tenantFriendlyName,
                 "--profile", profile.name,
-                "--runId", (docIndex * profile.numClients + i).toString(),
+                "--runId", (i).toString(),
                 "--url", url];
             if (args.debug) {
                 const debugPort = 9230 + i; // 9229 is the default and will be used for the root orchestrator process
