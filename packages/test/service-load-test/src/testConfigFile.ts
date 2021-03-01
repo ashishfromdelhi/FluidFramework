@@ -12,7 +12,7 @@ export interface ITestConfig {
 /** Type modeling the tenant sub-structure of the testConfig.json file */
 export interface ITestTenant {
     server: string,
-    username: string,
+    usernames: string[],
 }
 
 /** Type modeling the profile sub-structure of the testConfig.json file */

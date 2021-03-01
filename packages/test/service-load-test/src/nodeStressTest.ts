@@ -105,7 +105,7 @@ async function load(loginInfo: IOdspTestLoginInfo, url: string) {
     return respond.value as ILoadTest;
 }
 
-async function main() {
+async function main(this: any) {
     commander
         .version("0.0.1")
         .requiredOption("-t, --tenant <tenant>", "Which test tenant info to use from testConfig.json", "fluidCI")
@@ -115,6 +115,7 @@ async function main() {
         .option("-d, --debug", "Debug child processes via --inspect-brk")
         .option("-l, --log <filter>", "Filter debug logging. If not provided, uses DEBUG env variable.")
         .option("-z, --numDoc <numDoc>", "If it is not provided then default value as 1 will be used.")
+        .option("-ui, --userId <userId>", "If not provided by defaults it takes 0.")
         .parse(process.argv);
     const tenantArg: string = commander.tenant;
     const profileArg: string = commander.profile;
@@ -123,11 +124,12 @@ async function main() {
     const debug: true | undefined = commander.debug;
     const log: string | undefined = commander.log;
     const numDoc: number | undefined = commander.numDoc === undefined ? 1 : parseInt(commander.numDoc, 10);
+    const userId: number | undefined = commander.userId === undefined ? 0 : parseInt(commander.userId, 10);
     let config: ITestConfig;
     try {
-        config = JSON.parse(fs.readFileSync("./testConfig.json", "utf-8"));
+        config = JSON.parse(fs.readFileSync("./testConfigUser.json", "utf-8"));
     } catch (e) {
-        console.error("Failed to read testConfig.json");
+        console.error("Failed to read testConfigUser.json");
         console.error(e);
         process.exit(-1);
     }
@@ -137,22 +139,26 @@ async function main() {
         console.error("Invalid --tenant argument not found in testConfig.json tenants");
         process.exit(-1);
     }
-
-    let password: string;
-    try {
-        // Expected format of login__odsp__test__accounts is simply string key-value pairs of username and password
-        const passwords: { [user: string]: string } =
-            JSON.parse(process.env.login__odsp__test__accounts ?? "");
-
-        password = passwords[tenant.username];
-        assert(password, "Expected to find Password in an env variable since it wasn't provided via script param");
-    } catch (e) {
-        console.error("Failed to parse login__odsp__test__accounts env variable");
-        console.error(e);
-        process.exit(-1);
+    console.log(`%%%%%%%% ${tenant.usernames[0]}`);
+    const passwords: { [user: string]: string } =
+        JSON.parse(process.env.login__odsp__test__accounts ?? "");
+    const loginInfos: IOdspTestLoginInfo[] = [];
+    for (const user of tenant.usernames) {
+        let password: string;
+        try {
+            // Expected format of login__odsp__test__accounts is simply string key-value pairs of username and password
+            password = passwords[user];
+            assert(password, "Expected to find Password in an env variable since it wasn't provided via script param");
+        } catch (e) {
+            console.error("Failed to parse login__odsp__test__accounts env variable");
+            console.error(e);
+            process.exit(-1);
+        }
+        // user_passwords.push(password);
+        const loginInfo: IOdspTestLoginInfo = { server: tenant.server, username: user, password };
+        loginInfos.push(loginInfo);
+        // console.log(`${loginInfo.username} : ${loginInfo.password}`);
     }
-    const loginInfo: IOdspTestLoginInfo = { server: tenant.server, username: tenant.username, password };
-
     const profile: ILoadTestConfig | undefined = config.profiles[profileArg];
     if (profile === undefined) {
         console.error("Invalid --profile argument not found in testConfig.json profiles");
@@ -162,6 +168,10 @@ async function main() {
     if (log !== undefined) {
         process.env.DEBUG = log;
     }
+    // console.log(`------------------  ${loginInfos.length} ------------`);
+    // for (const loginInfo of loginInfos) {
+    //     console.log(`${loginInfo.server} , ${loginInfo.username} , ${loginInfo.password}`);
+    // }
     let result: number;
     // When runId is specified (with url), kick off a single test runner and exit when it's finished
     if (runId !== undefined) {
@@ -169,15 +179,13 @@ async function main() {
             console.error("Missing --url argument needed to run child process");
             process.exit(-1);
         }
-        result = await runnerProcess(loginInfo, profile, runId, url);
+        result = await runnerProcess(loginInfos[userId], profile, runId, url);
         process.exit(result);
     }
-
     // When runId is not specified, this is the orchestrator process which will spawn child test runners.
-    result = await orchestratorProcess(
-        { ...loginInfo, tenantFriendlyName: tenantArg },
-        { ...profile, name: profileArg },
-        { url, numDoc, debug });
+    result = await orchestratorProcess(loginInfos ,
+        { ...profile, name: profileArg, tenetFriendlyName: tenantArg },
+        { url, numDoc, debug});
     process.exit(result);
 }
 
@@ -210,8 +218,8 @@ async function runnerProcess(
  * Implementation of the orchestrator process. Returns the return code to exit the process with.
  */
 async function orchestratorProcess(
-    loginInfo: IOdspTestLoginInfo & { tenantFriendlyName: string },
-    profile: ILoadTestConfig & { name: string },
+    loginInfos: IOdspTestLoginInfo[],
+    profile: ILoadTestConfig & { name: string } & {tenetFriendlyName: string},
     args: { url?: string, numDoc?: number, debug?: true },
 ): Promise<number> {
     const currentdate = new Date();
@@ -222,20 +230,22 @@ async function orchestratorProcess(
                  currentdate.getMinutes().toString()  }:${
                  currentdate.getSeconds().toString()}`;
     const numDoc = args.numDoc === undefined ? 1 : args.numDoc;
+    console.log("You are in orchestratorProcess");
+    console.log(`------------${loginInfos.length}---------`);
     let odspTokens: IOdspTokens;
     try {
         // Ensure fresh tokens here so the test runners have them cached
         odspTokens = await odspTokenManager.getOdspTokens(
-            loginInfo.server,
+            loginInfos[0].server,
             getMicrosoftConfiguration(),
-            passwordTokenConfig(loginInfo.username, loginInfo.password),
+            passwordTokenConfig(loginInfos[0].username, loginInfos[0].password),
             undefined /* forceRefresh */,
             true /* forceReauth */,
         );
         await odspTokenManager.getPushTokens(
-            loginInfo.server,
+            loginInfos[0].server,
             getMicrosoftConfiguration(),
-            passwordTokenConfig(loginInfo.username, loginInfo.password),
+            passwordTokenConfig(loginInfos[0].username, loginInfos[0].password),
             undefined /* forceRefresh */,
             true /* forceReauth */,
         );
@@ -243,51 +253,62 @@ async function orchestratorProcess(
         // Log the login page url in case the caller needs to allow consent for this app
         const loginPageUrl =
             getLoginPageUrl(
-                loginInfo.server,
+                loginInfos[0].server,
                 getMicrosoftConfiguration(),
-                getOdspScope(loginInfo.server),
+                getOdspScope(loginInfos[0].server),
                 "http://localhost:7000/auth/callback",
             );
-
         console.log("You may need to allow consent for this app. Re-run the tool after allowing consent.");
         console.log(`Go here allow the app: ${loginPageUrl}\n`);
-
         throw ex;
     }
-
-    const p: Promise<void>[] = [];
-
+    const driveIds: string[] = [];
+    const docUrls: string[] = [];
     for (let docIndex = 0; docIndex < numDoc; docIndex++) {
         // Automatically determine driveId based on the server and user
-        const driveId = await getDriveId(loginInfo.server, "", undefined, { accessToken: odspTokens.accessToken });
-
+        const driveId = await getDriveId(loginInfos[0].server, "", undefined, { accessToken: odspTokens.accessToken });
         // Create a new file if a url wasn't provided
-        const url = args.url ?? await initialize(driveId, loginInfo);
-        const estRunningTimeMin = Math.floor(2 * profile.totalSendCount /
-            (profile.opRatePerMin * profile.numClients));
-        console.log(`${docIndex + 1} ---> Connecting to ${args.url ? "existing" : "new"}` +
-         `Container targeting dataStore with URL:\n${url}`);
-        console.log(`Authenticated as user: ${loginInfo.username}`);
-        console.log(`Selected test profile: ${profile.name}`);
-        console.log(`Estimated run time: ${estRunningTimeMin} minutes\n`);
-
-        for (let i = 0; i < profile.numClients; i++) {
-            const childArgs: string[] = [
-                "./dist/nodeStressTest.js",
-                "--tenant", loginInfo.tenantFriendlyName,
-                "--profile", profile.name,
-                "--runId", (i).toString(),
-                "--url", url];
-            if (args.debug) {
-                const debugPort = 9230 + i; // 9229 is the default and will be used for the root orchestrator process
-                childArgs.unshift(`--inspect-brk=${debugPort}`);
+        const url = args.url ?? await initialize(driveId, loginInfos[0]);
+        driveIds.push(driveId);
+        docUrls.push(url);
+        // console.log(`driveId : ${driveId}  docUrl : ${url} loginInfos : ${loginInfos[0].server}` +
+        // `${loginInfos[0].username} ${loginInfos[0].password}`);
+    }
+    for (const loginInfo of loginInfos) {
+        console.log(`:::: ${loginInfo.username} , ${loginInfo.password}`);
+    }
+    const p: Promise<void>[] = [];
+    for(let user = 0; user < loginInfos.length; user++) {
+        console.log(`user auth within clients loop ${user} : ${loginInfos[user].username}`);
+        for (let docIndex = 0; docIndex < numDoc; docIndex++) {
+            const url = docUrls[docIndex];
+            const estRunningTimeMin = Math.floor(2 * profile.totalSendCount /
+                (profile.opRatePerMin * profile.numClients));
+            console.log(`${docIndex + 1} ---> Connecting to ${args.url ? "existing" : "new"}` +
+            `Container targeting dataStore with URL:\n${url}`);
+            console.log(`Authenticated as user: ${loginInfos[user].username}`);
+            console.log(`Selected test profile: ${profile.name}`);
+            console.log(`Estimated run time: ${estRunningTimeMin} minutes\n`);
+            for (let i = 0; i < profile.numClients; i++) {
+                const childArgs: string[] = [
+                    "./dist/nodeStressTest.js",
+                    "--tenant", profile.tenetFriendlyName,
+                    "--profile", profile.name,
+                    "--runId", (i).toString(),
+                    "--url", url,
+                    "--userId", (user).toString()];
+                if (args.debug) {
+                    const debugPort = 9230 + i;
+                    // 9229 is the default and will be used for the root orchestrator process
+                    childArgs.unshift(`--inspect-brk=${debugPort}`);
+                }
+                const process = child_process.spawn(
+                    "node",
+                    childArgs,
+                    { stdio: "inherit" },
+                );
+                p.push(new Promise((resolve) => process.on("close", resolve)));
             }
-            const process = child_process.spawn(
-                "node",
-                childArgs,
-                { stdio: "inherit" },
-            );
-            p.push(new Promise((resolve) => process.on("close", resolve)));
         }
     }
     await Promise.all(p);
