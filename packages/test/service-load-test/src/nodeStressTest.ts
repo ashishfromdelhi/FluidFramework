@@ -146,8 +146,8 @@ async function main(this: any) {
     const passwords: { [user: string]: string } =
         JSON.parse(process.env.login__odsp__test__accounts ?? "");
     const loginInfos: IOdspTestLoginInfo[] = [];
-    for (let user = (podId - 1) * (tenant.usernames.length / numPod);
-     user < podId * ((tenant.usernames.length / numPod)); user++) {
+    const numOfUserPerPod = Math.floor(tenant.usernames.length / numPod);
+    for (let user = (podId - 1) * numOfUserPerPod; user < podId * (numOfUserPerPod); user++) {
         let password: string;
         try {
             // Expected format of login__odsp__test__accounts is simply string key-value pairs of username and password
