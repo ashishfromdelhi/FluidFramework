@@ -116,6 +116,8 @@ async function main(this: any) {
         .option("-l, --log <filter>", "Filter debug logging. If not provided, uses DEBUG env variable.")
         .option("-z, --numDoc <numDoc>", "If it is not provided then default value as 1 will be used.")
         .option("-ui, --userId <userId>", "If not provided by defaults it takes 0.")
+        .option("-pid, --podId <podId>","If it is not provided then default value as 1 will be used.")
+        .option("-npd, --numPod <numPod>","If it is not provided then default value as 1 will be used.")
         .parse(process.argv);
     const tenantArg: string = commander.tenant;
     const profileArg: string = commander.profile;
@@ -125,6 +127,8 @@ async function main(this: any) {
     const log: string | undefined = commander.log;
     const numDoc: number | undefined = commander.numDoc === undefined ? 1 : parseInt(commander.numDoc, 10);
     const userId: number | undefined = commander.userId === undefined ? 0 : parseInt(commander.userId, 10);
+    const podId: number | undefined = commander.podId === undefined ? 1 : parseInt(commander.podId, 10);
+    const numPod: number | undefined = commander.numPod === undefined ? 1 : parseInt(commander.numPod, 10);
     let config: ITestConfig;
     try {
         config = JSON.parse(fs.readFileSync("./testConfigUser.json", "utf-8"));
@@ -139,15 +143,15 @@ async function main(this: any) {
         console.error("Invalid --tenant argument not found in testConfig.json tenants");
         process.exit(-1);
     }
-    console.log(`%%%%%%%% ${tenant.usernames[0]}`);
     const passwords: { [user: string]: string } =
         JSON.parse(process.env.login__odsp__test__accounts ?? "");
     const loginInfos: IOdspTestLoginInfo[] = [];
-    for (const user of tenant.usernames) {
+    for (let user = (podId - 1) * (tenant.usernames.length / numPod);
+     user < podId * ((tenant.usernames.length / numPod)); user++) {
         let password: string;
         try {
             // Expected format of login__odsp__test__accounts is simply string key-value pairs of username and password
-            password = passwords[user];
+            password = passwords[tenant.usernames[user]];
             assert(password, "Expected to find Password in an env variable since it wasn't provided via script param");
         } catch (e) {
             console.error("Failed to parse login__odsp__test__accounts env variable");
@@ -155,9 +159,9 @@ async function main(this: any) {
             process.exit(-1);
         }
         // user_passwords.push(password);
-        const loginInfo: IOdspTestLoginInfo = { server: tenant.server, username: user, password };
+        const loginInfo: IOdspTestLoginInfo = { server: tenant.server, username: tenant.usernames[user], password };
         loginInfos.push(loginInfo);
-        // console.log(`${loginInfo.username} : ${loginInfo.password}`);
+        console.log(`${loginInfo.username} : ${loginInfo.password}`);
     }
     const profile: ILoadTestConfig | undefined = config.profiles[profileArg];
     if (profile === undefined) {
@@ -232,73 +236,76 @@ async function orchestratorProcess(
     const numDoc = args.numDoc === undefined ? 1 : args.numDoc;
     console.log("You are in orchestratorProcess");
     console.log(`------------${loginInfos.length}---------`);
-    let odspTokens: IOdspTokens;
-    try {
-        // Ensure fresh tokens here so the test runners have them cached
-        odspTokens = await odspTokenManager.getOdspTokens(
-            loginInfos[0].server,
-            getMicrosoftConfiguration(),
-            passwordTokenConfig(loginInfos[0].username, loginInfos[0].password),
-            undefined /* forceRefresh */,
-            true /* forceReauth */,
-        );
-        await odspTokenManager.getPushTokens(
-            loginInfos[0].server,
-            getMicrosoftConfiguration(),
-            passwordTokenConfig(loginInfos[0].username, loginInfos[0].password),
-            undefined /* forceRefresh */,
-            true /* forceReauth */,
-        );
-    } catch (ex) {
-        // Log the login page url in case the caller needs to allow consent for this app
-        const loginPageUrl =
-            getLoginPageUrl(
-                loginInfos[0].server,
-                getMicrosoftConfiguration(),
-                getOdspScope(loginInfos[0].server),
-                "http://localhost:7000/auth/callback",
-            );
-        console.log("You may need to allow consent for this app. Re-run the tool after allowing consent.");
-        console.log(`Go here allow the app: ${loginPageUrl}\n`);
-        throw ex;
-    }
-    const driveIds: string[] = [];
-    const docUrls: string[] = [];
+    // const driveIds: string[] = [];
+    // const docUrls: string[] = [];
+
+    const p: Promise<void>[] = [];
     for (let docIndex = 0; docIndex < numDoc; docIndex++) {
+        const ind = (docIndex % loginInfos.length);
+        let odspTokens: IOdspTokens;
+        try {
+            // Ensure fresh tokens here so the test runners have them cached
+            odspTokens = await odspTokenManager.getOdspTokens(
+                loginInfos[ind].server,
+                getMicrosoftConfiguration(),
+                passwordTokenConfig(loginInfos[ind].username, loginInfos[ind].password),
+                undefined /* forceRefresh */,
+                true /* forceReauth */,
+            );
+            await odspTokenManager.getPushTokens(
+                loginInfos[ind].server,
+                getMicrosoftConfiguration(),
+                passwordTokenConfig(loginInfos[ind].username, loginInfos[ind].password),
+                undefined /* forceRefresh */,
+                true /* forceReauth */,
+            );
+        } catch (ex) {
+            // Log the login page url in case the caller needs to allow consent for this app
+            const loginPageUrl =
+                getLoginPageUrl(
+                    loginInfos[ind].server,
+                    getMicrosoftConfiguration(),
+                    getOdspScope(loginInfos[ind].server),
+                    "http://localhost:7000/auth/callback",
+                );
+            console.log("You may need to allow consent for this app. Re-run the tool after allowing consent.");
+            console.log(`Go here allow the app: ${loginPageUrl}\n`);
+            throw ex;
+        }
+        console.log(`${odspTokens.accessToken}`);
         // Automatically determine driveId based on the server and user
-        const driveId = await getDriveId(loginInfos[0].server, "", undefined, { accessToken: odspTokens.accessToken });
+        const driveId = await getDriveId(loginInfos[ind].server, "",
+         undefined, { accessToken: odspTokens.accessToken });
         // Create a new file if a url wasn't provided
-        const url = args.url ?? await initialize(driveId, loginInfos[0]);
-        driveIds.push(driveId);
-        docUrls.push(url);
+        const url = args.url ?? await initialize(driveId, loginInfos[ind]);
+        // driveIds.push(driveId);
+        // docUrls.push(url);
         // console.log(`driveId : ${driveId}  docUrl : ${url} loginInfos : ${loginInfos[0].server}` +
         // `${loginInfos[0].username} ${loginInfos[0].password}`);
-    }
-    for (const loginInfo of loginInfos) {
-        console.log(`:::: ${loginInfo.username} , ${loginInfo.password}`);
-    }
-    const p: Promise<void>[] = [];
-    for(let user = 0; user < loginInfos.length; user++) {
-        console.log(`user auth within clients loop ${user} : ${loginInfos[user].username}`);
-        for (let docIndex = 0; docIndex < numDoc; docIndex++) {
-            const url = docUrls[docIndex];
+        // console.log(`${loginInfos.length}`);
+        for(let user = 0; user < loginInfos.length; user++) {
+            console.log(`user auth within clients loop ${user} : ${loginInfos[user].username}`);
             const estRunningTimeMin = Math.floor(2 * profile.totalSendCount /
-                (profile.opRatePerMin * profile.numClients));
+                 (profile.opRatePerMin * profile.numClients));
             console.log(`${docIndex + 1} ---> Connecting to ${args.url ? "existing" : "new"}` +
-            `Container targeting dataStore with URL:\n${url}`);
+             `Container targeting dataStore with URL:\n${url}`);
             console.log(`Authenticated as user: ${loginInfos[user].username}`);
             console.log(`Selected test profile: ${profile.name}`);
             console.log(`Estimated run time: ${estRunningTimeMin} minutes\n`);
-            for (let i = 0; i < profile.numClients; i++) {
+            let val = profile.numClients / loginInfos.length;
+            if (profile.numClients % loginInfos.length > user) {
+                val = val + 1;
+            }
+            for (let i = 0; i < val; i++) {
                 const childArgs: string[] = [
                     "./dist/nodeStressTest.js",
                     "--tenant", profile.tenetFriendlyName,
                     "--profile", profile.name,
-                    "--runId", (i).toString(),
+                    "--runId", (user).toString(),
                     "--url", url,
                     "--userId", (user).toString()];
                 if (args.debug) {
-                    const debugPort = 9230 + i;
+                    const debugPort = 9230 + user;
                     // 9229 is the default and will be used for the root orchestrator process
                     childArgs.unshift(`--inspect-brk=${debugPort}`);
                 }
