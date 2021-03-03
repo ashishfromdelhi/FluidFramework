@@ -161,7 +161,7 @@ async function main(this: any) {
         // user_passwords.push(password);
         const loginInfo: IOdspTestLoginInfo = { server: tenant.server, username: tenant.usernames[user], password };
         loginInfos.push(loginInfo);
-        console.log(`${loginInfo.username} : ${loginInfo.password}`);
+        // console.log(`${loginInfo.username} : ${loginInfo.password}`);
     }
     const profile: ILoadTestConfig | undefined = config.profiles[profileArg];
     if (profile === undefined) {
@@ -272,7 +272,7 @@ async function orchestratorProcess(
             console.log(`Go here allow the app: ${loginPageUrl}\n`);
             throw ex;
         }
-        console.log(`${odspTokens.accessToken}`);
+        // console.log(`${odspTokens.accessToken}`);
         // Automatically determine driveId based on the server and user
         const driveId = await getDriveId(loginInfos[ind].server, "",
          undefined, { accessToken: odspTokens.accessToken });
@@ -284,17 +284,20 @@ async function orchestratorProcess(
         // `${loginInfos[0].username} ${loginInfos[0].password}`);
         // console.log(`${loginInfos.length}`);
         for(let user = 0; user < loginInfos.length; user++) {
-            console.log(`user auth within clients loop ${user} : ${loginInfos[user].username}`);
-            const estRunningTimeMin = Math.floor(2 * profile.totalSendCount /
-                 (profile.opRatePerMin * profile.numClients));
-            console.log(`${docIndex + 1} ---> Connecting to ${args.url ? "existing" : "new"}` +
-             `Container targeting dataStore with URL:\n${url}`);
-            console.log(`Authenticated as user: ${loginInfos[user].username}`);
-            console.log(`Selected test profile: ${profile.name}`);
-            console.log(`Estimated run time: ${estRunningTimeMin} minutes\n`);
-            let val = profile.numClients / loginInfos.length;
+            let val = Math.floor(profile.numClients / loginInfos.length);
             if (profile.numClients % loginInfos.length > user) {
                 val = val + 1;
+            }
+            // console.log(`value of val is ${val}`);
+            if (val > 0) {
+                console.log(`user auth within clients loop ${user} : ${loginInfos[user].username}`);
+                const estRunningTimeMin = Math.floor(2 * profile.totalSendCount /
+                     (profile.opRatePerMin * profile.numClients));
+                console.log(`${docIndex + 1} ---> Connecting to ${args.url ? "existing" : "new"}` +
+                `Container targeting dataStore with URL:\n${url}`);
+                console.log(`Authenticated as user: ${loginInfos[user].username}`);
+                console.log(`Selected test profile: ${profile.name}`);
+                console.log(`Estimated run time: ${estRunningTimeMin} minutes\n`);
             }
             for (let i = 0; i < val; i++) {
                 const childArgs: string[] = [
