@@ -1,0 +1,46 @@
+for i in `kubectl get pods -n odsp-perf-lg-fluid | grep Running | awk '{print $1}'`; do nohup winpty kubectl exec -it -n odsp-perf-lg-fluid $i -- bash -c "node ./dist/nodeStressTest.js --tenant 0312 --profile BaseScenario –numDoc 5 > testscenario.logs" &; done
+
+lg-fluidapp-595864f5f5-bxblg   1/1     Running   0          109s
+lg-fluidapp-595864f5f5-czplr   1/1     Running   0          58s
+lg-fluidapp-595864f5f5-fkwbs   1/1     Running   0          112s
+
+winpty kubectl exec -it -n odsp-perf-lg-fluid lg-fluidapp-595864f5f5-bxblg -- bash -c "node ./dist/nodeStressTest.js --tenant 0312 --profile BaseScenario –numDoc 5 > testscenario.logs"
+winpty kubectl exec -it -n odsp-perf-lg-fluid lg-fluidapp-595864f5f5-czplr -- bash -c "node ./dist/nodeStressTest.js --tenant 0312 --profile BaseScenario –numDoc 5 > testscenario.logs"
+winpty kubectl exec -it -n odsp-perf-lg-fluid lg-fluidapp-595864f5f5-fkwbs -- bash -c "node ./dist/nodeStressTest.js --tenant 0312 --profile BaseScenario –numDoc 5 > testscenario.logs"
+
+
+
+
+kubectl get pods -n odsp-perf-lg-fluid
+kubectl delete namespace odsp-perf-lg-fluid
+kubectl create namespace odsp-fluid-anshul
+kubectl apply -f load-generator-fluid-app.yaml -n odsp-fluid-anshul
+kubectl scale deployments lg-fluidapp --replicas=3 -n odsp-fluid-anshul
+
+
+kubectl get pods -n odsp-fluid-anshul
+
+NAME                           READY   STATUS    RESTARTS   AGE
+lg-fluidapp-595864f5f5-cclz9   1/1     Running   0          71s
+lg-fluidapp-595864f5f5-lskqb   1/1     Running   0          61s
+lg-fluidapp-595864f5f5-nth7n   1/1     Running   0          61s
+
+
+winpty kubectl exec -it -n odsp-fluid-anshul lg-fluidapp-595864f5f5-cclz9 -- bash -c "node ./dist/nodeStressTest.js --tenant 0312 --profile BaseScenario –numDoc 5 > testscenario.logs"
+winpty kubectl exec -it -n odsp-fluid-anshul lg-fluidapp-595864f5f5-lskqb -- bash -c "node ./dist/nodeStressTest.js --tenant 0312 --profile BaseScenario –numDoc 5 > testscenario.logs"
+winpty kubectl exec -it -n odsp-fluid-anshul lg-fluidapp-595864f5f5-nth7n -- bash -c "node ./dist/nodeStressTest.js --tenant 0312 --profile BaseScenario –numDoc 5 > testscenario.logs"
+
+
+docker build --tag="loadgeneration.azurecr.io/odsprespond/load-generator-fluidapp" -f Dockerfile .
+az acr login --name loadgeneration
+docker push loadgeneration.azurecr.io/odsprespond/load-generator-fluidapp
+docker image ls
+kubectl delete namespace odsp-fluid-anshul
+kubectl create namespace odsp-fluid-anshul
+kubectl apply -f load-generator-fluid-app.yaml -n odsp-fluid-anshul
+kubectl scale deployments lg-fluidapp --replicas=3 -n odsp-fluid-anshul
+
+
+
+
+az aks get-credentials --resource-group RegressionPrevention --name FluidScaleTest

@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lg-fluidapp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: lg-fluidapp
+  template:
+    metadata:
+      labels:
+        name: lg-fluidapp
+    spec:
+      containers:
+      - name: lg-fluidapp
+        image: loadgeneration.azurecr.io/odsprespond/load-generator-fluidapp-nomultiplexing:latest
+        imagePullPolicy: Always
+        command: ["/bin/sh"]
+        args: ["-c", "while true; do echo done deploying lg-fluidapp; sleep 3600;done"]
+        resources:
+          requests:
+            cpu: 700m
+            memory: 2400M
+          limits:
+            cpu: 700m
+            memory: 2400M

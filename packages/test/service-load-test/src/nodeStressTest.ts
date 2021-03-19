@@ -128,7 +128,7 @@ async function main(this: any) {
     const numDoc: number | undefined = commander.numDoc === undefined ? 1 : parseInt(commander.numDoc, 10);
     const userId: number | undefined = commander.userId === undefined ? 0 : parseInt(commander.userId, 10);
     const podId: number | undefined = commander.podId === undefined ? 1 : parseInt(commander.podId, 10);
-    const numPod: number | undefined = commander.numPod === undefined ? 1 : parseInt(commander.numPod, 10);
+    // const numPod: number | undefined = commander.numPod === undefined ? 1 : parseInt(commander.numPod, 10);
     let config: ITestConfig;
     try {
         config = JSON.parse(fs.readFileSync("./testConfigUser.json", "utf-8"));
@@ -143,30 +143,54 @@ async function main(this: any) {
         console.error("Invalid --tenant argument not found in testConfig.json tenants");
         process.exit(-1);
     }
+
+    const profile: ILoadTestConfig | undefined = config.profiles[profileArg];
+    if (profile === undefined) {
+        console.error("Invalid --profile argument not found in testConfig.json profiles");
+        process.exit(-1);
+    }
+
     const passwords: { [user: string]: string } =
         JSON.parse(process.env.login__odsp__test__accounts ?? "");
     const loginInfos: IOdspTestLoginInfo[] = [];
-    const numOfUserPerPod = Math.floor(tenant.usernames.length / numPod);
-    for (let user = (podId - 1) * numOfUserPerPod; user < podId * (numOfUserPerPod); user++) {
+    // const numUserPerPod = Math.floor(tenant.usernames.length / numPod);
+
+    if (runId !== undefined) {
         let password: string;
+        const tenantUsername: string = tenant.usernames[podId - 1 + userId];
+        console.log(`${tenantUsername}`);
         try {
-            // Expected format of login__odsp__test__accounts is simply string key-value pairs of username and password
-            password = passwords[tenant.usernames[user]];
-            assert(password, "Expected to find Password in an env variable since it wasn't provided via script param");
+            password = passwords[tenantUsername];
+            console.log(`${password}`);
+            assert(password, "Expected to find Password in an env variable");
         } catch (e) {
             console.error("Failed to parse login__odsp__test__accounts env variable");
             console.error(e);
             process.exit(-1);
         }
         // user_passwords.push(password);
-        const loginInfo: IOdspTestLoginInfo = { server: tenant.server, username: tenant.usernames[user], password };
+        const loginInfo: IOdspTestLoginInfo = { server: tenant.server, username: tenantUsername, password };
         loginInfos.push(loginInfo);
         // console.log(`${loginInfo.username} : ${loginInfo.password}`);
     }
-    const profile: ILoadTestConfig | undefined = config.profiles[profileArg];
-    if (profile === undefined) {
-        console.error("Invalid --profile argument not found in testConfig.json profiles");
-        process.exit(-1);
+    else {
+        for (let user = podId - 1; user < podId - 1 + profile.numClients; user++) {
+            let password: string;
+            console.log(`${tenant.usernames[user]}`);
+            try {
+                password = passwords[tenant.usernames[user]];
+                console.log(`${password}`);
+                assert(password, "Expected to find Password in an env variable");
+            } catch (e) {
+                console.error("Failed to parse login__odsp__test__accounts env variable");
+                console.error(e);
+                process.exit(-1);
+            }
+            // user_passwords.push(password);
+            const loginInfo: IOdspTestLoginInfo = { server: tenant.server, username: tenant.usernames[user], password };
+            loginInfos.push(loginInfo);
+            // console.log(`${loginInfo.username} : ${loginInfo.password}`);
+        }
     }
 
     if (log !== undefined) {
@@ -183,13 +207,14 @@ async function main(this: any) {
             console.error("Missing --url argument needed to run child process");
             process.exit(-1);
         }
-        result = await runnerProcess(loginInfos[userId], profile, runId, url);
+        result = await runnerProcess(loginInfos[0], profile, runId, url);
         process.exit(result);
     }
     // When runId is not specified, this is the orchestrator process which will spawn child test runners.
     result = await orchestratorProcess(loginInfos ,
         { ...profile, name: profileArg, tenetFriendlyName: tenantArg },
-        { url, numDoc, debug});
+        { url, numDoc, debug},
+        podId);
     process.exit(result);
 }
 
@@ -225,6 +250,7 @@ async function orchestratorProcess(
     loginInfos: IOdspTestLoginInfo[],
     profile: ILoadTestConfig & { name: string } & {tenetFriendlyName: string},
     args: { url?: string, numDoc?: number, debug?: true },
+    podId: number,
 ): Promise<number> {
     const currentdate = new Date();
     const startDatetime = `Last Sync: ${  currentdate.getDate().toString()  }/${
@@ -236,8 +262,8 @@ async function orchestratorProcess(
     const numDoc = args.numDoc === undefined ? 1 : args.numDoc;
     console.log("You are in orchestratorProcess");
     console.log(`------------${loginInfos.length}---------`);
-    // const driveIds: string[] = [];
-    // const docUrls: string[] = [];
+    const driveIds: string[] = [];
+    const docUrls: string[] = [];
 
     const p: Promise<void>[] = [];
     for (let docIndex = 0; docIndex < numDoc; docIndex++) {
@@ -278,11 +304,14 @@ async function orchestratorProcess(
          undefined, { accessToken: odspTokens.accessToken });
         // Create a new file if a url wasn't provided
         const url = args.url ?? await initialize(driveId, loginInfos[ind]);
-        // driveIds.push(driveId);
-        // docUrls.push(url);
+        driveIds.push(driveId);
+        docUrls.push(url);
         // console.log(`driveId : ${driveId}  docUrl : ${url} loginInfos : ${loginInfos[0].server}` +
         // `${loginInfos[0].username} ${loginInfos[0].password}`);
         // console.log(`${loginInfos.length}`);
+    }
+    for (let docIndex = 0; docIndex < numDoc; docIndex++) {
+        const url = docUrls[docIndex];
         for(let user = 0; user < loginInfos.length; user++) {
             let val = Math.floor(profile.numClients / loginInfos.length);
             if (profile.numClients % loginInfos.length > user) {
@@ -292,7 +321,7 @@ async function orchestratorProcess(
             if (val > 0) {
                 console.log(`user auth within clients loop ${user} : ${loginInfos[user].username}`);
                 const estRunningTimeMin = Math.floor(2 * profile.totalSendCount /
-                     (profile.opRatePerMin * profile.numClients));
+                        (profile.opRatePerMin * profile.numClients));
                 console.log(`${docIndex + 1} ---> Connecting to ${args.url ? "existing" : "new"}` +
                 `Container targeting dataStore with URL:\n${url}`);
                 console.log(`Authenticated as user: ${loginInfos[user].username}`);
@@ -306,6 +335,7 @@ async function orchestratorProcess(
                     "--profile", profile.name,
                     "--runId", (user).toString(),
                     "--url", url,
+                    "--podId", (podId).toString(),
                     "--userId", (user).toString()];
                 if (args.debug) {
                     const debugPort = 9230 + user;

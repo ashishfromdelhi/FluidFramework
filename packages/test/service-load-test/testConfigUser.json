@@ -15,7 +15,37 @@
                 "user6@a830edad9050849829J20060312.onmicrosoft.com",
                 "user7@a830edad9050849829J20060312.onmicrosoft.com",
                 "user8@a830edad9050849829J20060312.onmicrosoft.com",
-                "user9@a830edad9050849829J20060312.onmicrosoft.com"]
+                "user9@a830edad9050849829J20060312.onmicrosoft.com",
+                "user10@a830edad9050849829J20060312.onmicrosoft.com",
+                "user11@a830edad9050849829J20060312.onmicrosoft.com",
+                "user12@a830edad9050849829J20060312.onmicrosoft.com",
+                "user13@a830edad9050849829J20060312.onmicrosoft.com",
+                "user14@a830edad9050849829J20060312.onmicrosoft.com",
+                "user15@a830edad9050849829J20060312.onmicrosoft.com",
+                "user16@a830edad9050849829J20060312.onmicrosoft.com",
+                "user17@a830edad9050849829J20060312.onmicrosoft.com",
+                "user18@a830edad9050849829J20060312.onmicrosoft.com",
+                "user19@a830edad9050849829J20060312.onmicrosoft.com",
+                "user20@a830edad9050849829J20060312.onmicrosoft.com",
+                "user21@a830edad9050849829J20060312.onmicrosoft.com",
+                "user22@a830edad9050849829J20060312.onmicrosoft.com",
+                "user23@a830edad9050849829J20060312.onmicrosoft.com",
+                "user24@a830edad9050849829J20060312.onmicrosoft.com",
+                "user25@a830edad9050849829J20060312.onmicrosoft.com",
+                "user26@a830edad9050849829J20060312.onmicrosoft.com",
+                "user27@a830edad9050849829J20060312.onmicrosoft.com",
+                "user28@a830edad9050849829J20060312.onmicrosoft.com",
+                "user29@a830edad9050849829J20060312.onmicrosoft.com",
+                "user30@a830edad9050849829J20060312.onmicrosoft.com",
+                "user31@a830edad9050849829J20060312.onmicrosoft.com",
+                "user32@a830edad9050849829J20060312.onmicrosoft.com",
+                "user33@a830edad9050849829J20060312.onmicrosoft.com",
+                "user34@a830edad9050849829J20060312.onmicrosoft.com",
+                "user35@a830edad9050849829J20060312.onmicrosoft.com",
+                "user36@a830edad9050849829J20060312.onmicrosoft.com",
+                "user37@a830edad9050849829J20060312.onmicrosoft.com",
+                "user38@a830edad9050849829J20060312.onmicrosoft.com",
+                "user39@a830edad9050849829J20060312.onmicrosoft.com"]
         },
         "2616-my": {
             "server": "a830edad9050849830E21012616-my.sharepoint.com",
@@ -45,11 +75,11 @@
             "readWriteCycleMs": 10000
         },
         "BaseScenario": {
-            "opRatePerMin": 120,
+            "opRatePerMin": 60,
             "progressIntervalMs": 5000,
             "numClients": 10,
-            "totalSendCount": 6000,
-            "readWriteCycleMs": 10000
+            "totalSendCount": 54000,
+            "readWriteCycleMs": 30000
         }
     }
 }
