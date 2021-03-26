@@ -22,13 +22,13 @@ function RunLoadTest {
 }
 
 function CreateInfra{
-	
+
 	[CmdletBinding()]
     Param(
         [Parameter(Mandatory = $true)]
         [string]$NumOfPods
     )
-	
+
 	kubectl create namespace odsp-perf-lg-fluid
 	kubectl apply -f load-generator-fluid-app.yaml -n odsp-perf-lg-fluid
     kubectl scale deployments lg-fluidapp -n odsp-perf-lg-fluid --replicas=$NumOfPods
@@ -49,15 +49,15 @@ workflow RunTest{
 		[Parameter(Mandatory = $true)]
         [string]$Profile
     )
-	$Tenants = @('0312', '1220', '1520', '1100')
+	$Tenants = @('1020', '1100', '1220', '1520', '0900', '0001', '0002', '0312', '0420' ,'0500')
 	$Pods = $(kubectl get pods -n odsp-perf-lg-fluid --field-selector status.phase=Running -o json | ConvertFrom-Json).items
     [int]$PodsCount = $Pods.count
     Write-Output "Load Starting"
-    foreach -parallel -ThrottleLimit 8 ($i in 1..$PodsCount) {
+    foreach -parallel -ThrottleLimit 10 ($i in 1..$PodsCount) {
 		$PodName = $Pods[$i - 1].metadata.name
 		$TenantIndex = ($i-1) % $Tenants.count
 		$TenantIdentifier = $Tenants[$TenantIndex]
-		$PodId=[int][Math]::Floor(($i + $Tenants.count -1)/$Tenants.count) 
+		$PodId=[int][Math]::Floor(($i + $Tenants.count -1)/$Tenants.count)
         $Command = "node ./dist/nodeStressTest.js --tenant $TenantIdentifier --profile $Profile --numDoc $NumOfDocsPerPod --podId $PodId > testscenario.logs 2>&1 &"
         Write-Output "Exec Command: $Command on Pod: $PodName"
 		kubectl exec $PodName -n odsp-perf-lg-fluid -- bash -c $Command
@@ -75,7 +75,7 @@ function DownloadLogs {
 	New-Item -Path $foldername -ItemType Directory | out-null
 	Write-Host "A new directory is created: $foldername"
 	Write-Host "Logs will be downloaded in this new directory: $foldername"
-    foreach ($i in 1..$PodsCount) {
+    foreach ($i in 1..$PodsCount)  {
 		$PodName = $Pods[$i - 1].metadata.name
         Write-Host "Started downloading logs for Pod: $PodName"
 		kubectl cp $PodName`:/app/testscenario.logs $foldername/$PodName.logs  | out-null
@@ -118,7 +118,7 @@ function GenerateConfig{
 		[Parameter(Mandatory = $true)]
         [string]$NumOfDocsPerTenant
     )
-	$Tenants = @('0312', '1220', '0916', '0100', '1520', '1100')
+	$Tenants = @('1020', '1100', '1220', '1520', '0900', '0001', '0002', '0312', '0420' ,'0500')
 	[int]$TenantsCount = $Tenants.count
     Write-Host "GenerateConfig starting"
 	foreach ($i in 1..$TenantsCount) {
