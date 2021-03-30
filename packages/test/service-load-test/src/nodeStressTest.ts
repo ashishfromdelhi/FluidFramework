@@ -161,7 +161,7 @@ async function main(this: any) {
             process.exit(-1);
         }
         // console.log(`${runId}`);
-        result = await runnerProcess(loginInfo, profile, runId, url);
+        result = await runnerProcess(loginInfo, profile, runId, url, profile.connectionRetryCount);
         process.exit(result);
     }
     // When runId is not specified, this is the orchestrator process which will spawn child test runners.
@@ -179,6 +179,7 @@ async function runnerProcess(
     profile: ILoadTestConfig,
     runId: number,
     url: string,
+    maxRetries: number,
 ): Promise<number> {
     try {
         const runConfig: IRunConfig = {
@@ -188,12 +189,25 @@ async function runnerProcess(
         const stressTest = await load(loginInfo, url);
         await stressTest.run(runConfig);
         console.log(`${runId.toString().padStart(3)}> exit`);
-        return 0;
     } catch (e) {
+        const currentdate = new Date();
+        const currentTime = `Last Sync: ${  currentdate.getDate().toString()  }/${
+                     (currentdate.getMonth() + 1).toString()  }/${
+                     currentdate.getFullYear().toString()  } @ ${
+                        currentdate.getHours().toString()  }:${
+                        currentdate.getMinutes().toString()  }:${
+                        currentdate.getSeconds().toString()}`;
         console.error(`${runId.toString().padStart(3)}> error: loading test`);
         console.error(e);
-        return -1;
+        if (maxRetries > 0) {
+            console.error(`${currentTime} ::: Retrying failed runnerProcess ${runId} ::: ${url}`);
+            await runnerProcess(loginInfo, profile, runId, url, maxRetries - 1);
+        }
+        else {
+            return -1;
+        }
     }
+    return 0;
 }
 
 /**
