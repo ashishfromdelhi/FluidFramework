@@ -194,9 +194,10 @@ export class OdspDocumentDeltaConnection extends DocumentDeltaConnection impleme
         epochTracker: EpochTracker): Promise<IDocumentDeltaConnection>
     {
         // enable multiplexing when the websocket url does not include the tenant/document id
-        const parsedUrl = new URL(url);
-        const enableMultiplexing = !parsedUrl.searchParams.has("documentId") && !parsedUrl.searchParams.has("tenantId");
-
+        // const parsedUrl = new URL(url);
+        // const enableMultiplexing = !parsedUrl.searchParams.has("documentId")
+        // && !parsedUrl.searchParams.has("tenantId");
+        const enableMultiplexing = false;
         // do not include the specific tenant/doc id in the ref key when multiplexing
         // this will allow multiple documents to share the same websocket connection
         const socketReferenceKey = enableMultiplexing ? url : `${url},${tenantId},${documentId}`;
