@@ -50,3 +50,7 @@ nyc
 # Generated modeuls
 intel_modules/
 temp_modules/
+
+# Dockerisation
+Dockerfile
+*-*-*-*-*
