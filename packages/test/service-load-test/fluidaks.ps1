@@ -74,9 +74,14 @@ workflow RunTest{
 }
 
 function DownloadLogs {
+	[CmdletBinding()]
+    Param(
+		[Parameter(Mandatory = $true)]
+        [string]$Namespace
+    )
 	Write-Host "DownloadLogs started"
-	kubectl config set-context --current --namespace=odsp-fluid-anshul | out-null
-	$Pods = $(kubectl get pods -n odsp-fluid-anshul --field-selector status.phase=Running -o json | ConvertFrom-Json).items
+	kubectl config set-context --current --namespace $Namespace | out-null
+	$Pods = $(kubectl get pods -n $Namespace --field-selector status.phase=Running -o json | ConvertFrom-Json).items
     [int]$PodsCount = $Pods.count
 	$foldername = [guid]::NewGuid()
 	New-Item -Path $foldername -ItemType Directory | out-null
@@ -89,6 +94,7 @@ function DownloadLogs {
 		Write-Host "Completed downloading logs for Pod: $PodName"
     }
 	Write-Host "DownloadLogs finished"
+	return $foldername
 }
 
 function UploadConfig {
@@ -136,4 +142,57 @@ function GenerateConfig{
     }
 	Write-Host "GenerateConfig completed"
 
+}
+
+
+workflow CopyLogsToAzure{
+	[CmdletBinding()]
+    Param(
+		[Parameter(Mandatory = $true)]
+        [string]$AccountKey,
+		[Parameter(Mandatory = $true)]
+        [string]$Namespace
+    )
+	$Pods = $(kubectl get pods -n $Namespace --field-selector status.phase=Running -o json | ConvertFrom-Json).items
+    [int]$PodsCount = $Pods.count
+	$datePath = Get-Date -Format "yyyy-MM-dd-HH-mm"
+	az storage directory create --account-key $AccountKey  --account-name fluidwus2  --name $datePath --share-name lhy
+    Write-Output "Copy Starting"
+    foreach -parallel -ThrottleLimit 10 ($i in 1..$PodsCount) {
+		$PodName = $Pods[$i - 1].metadata.name
+		$Command = "az storage file upload --account-key $AccountKey  --account-name fluidwus2 --share-name lhy --source testscenario.logs --path $datePath\$PodName.log"
+        Write-Output "Exec Command: $Command on Pod: $PodName"
+		kubectl exec $PodName -n $Namespace -- bash -c $Command
+        Write-Output "Exec Command DONE: on Pod: $PodName"
+    }
+	Write-Output "Copy Done"
+	#kubectl delete namespace odsp-perf-lg-fluid
+}
+
+function DownloadLogsAndCopyToAzure {
+	[CmdletBinding()]
+    Param(
+		[Parameter(Mandatory = $true)]
+        [string]$AccountKey,
+		[Parameter(Mandatory = $true)]
+        [string]$Namespace
+    )
+	Write-Host "DownloadLogs started"
+	kubectl config set-context --current --namespace $Namespace | out-null
+	$Pods = $(kubectl get pods -n $Namespace --field-selector status.phase=Running -o json | ConvertFrom-Json).items
+    [int]$PodsCount = $Pods.count
+	$foldername = Get-Date -Format "yyyy-MM-dd-HH-mm"
+	New-Item -Path $foldername -ItemType Directory | out-null
+	az storage directory create --account-key $AccountKey  --account-name fluidwus2  --name $foldername --share-name lhy
+	Write-Host "A new directory is created: $foldername"
+	Write-Host "Logs will be downloaded in this new directory: $foldername"
+    foreach ($i in 1..$PodsCount)  {
+		$PodName = $Pods[$i - 1].metadata.name
+        Write-Host "Started downloading logs for Pod: $PodName"
+		kubectl cp $PodName`:/app/testscenario.logs $foldername/$PodName.logs  | out-null
+		az storage file upload --account-key $AccountKey  --account-name fluidwus2 --share-name lhy --source $foldername/$PodName.logs --path $foldername
+		Write-Host "Completed downloading logs for Pod: $PodName"
+    }
+	Write-Host "DownloadLogs finished"
+	return $foldername
 }
