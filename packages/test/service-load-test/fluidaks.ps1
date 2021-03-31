@@ -7,18 +7,20 @@ function RunLoadTest {
 		[Parameter(Mandatory = $true)]
         [string]$NumOfDocsPerPod,
 		[Parameter(Mandatory = $true)]
-        [string]$Profile
+        [string]$Profile,
+		[Parameter(Mandatory = $true)]
+        [string]$Namespace
     )
 
     Write-Host "Starting RunLoadTest NumOfPods: $NumOfPods, NumOfDocsPerPod: $NumOfDocsPerPod, Profile: $Profile"
-	kubectl config set-context --current --namespace=odsp-perf-lg-fluid | out-null
-	CreateInfra -NumOfPods $NumOfPods
-	$Pods = $(kubectl get pods -n odsp-perf-lg-fluid --field-selector status.phase=Running -o json | ConvertFrom-Json).items
+	kubectl config set-context --current --namespace=$Namespace | out-null
+	CreateInfra -NumOfPods $NumOfPods -Namespace $Namespace
+	$Pods = $(kubectl get pods -n $Namespace --field-selector status.phase=Running -o json | ConvertFrom-Json).items
 	$PodName = $Pods[0].metadata.name
 	#GenerateConfig -PodName $PodName -NumOfDocsPerTenant 2
 	#DownloadConfig -PodName $PodName
 	#UploadConfig
-	RunTest -NumOfDocsPerPod $NumOfDocsPerPod -Profile $Profile
+	RunTest -NumOfDocsPerPod $NumOfDocsPerPod -Profile $Profile -Namespace $Namespace
 }
 
 function CreateInfra{
@@ -26,17 +28,19 @@ function CreateInfra{
 	[CmdletBinding()]
     Param(
         [Parameter(Mandatory = $true)]
-        [string]$NumOfPods
+        [string]$NumOfPods,
+		[Parameter(Mandatory = $true)]
+        [string]$Namespace
     )
 
-	kubectl create namespace odsp-perf-lg-fluid
-	kubectl apply -f load-generator-fluid-app.yaml -n odsp-perf-lg-fluid
-    kubectl scale deployments lg-fluidapp -n odsp-perf-lg-fluid --replicas=$NumOfPods
-    $RunningNumOfPods = $(kubectl get pods -n odsp-perf-lg-fluid --field-selector status.phase=Running).count -1
+	kubectl create namespace $Namespace
+	kubectl apply -f load-generator-fluid-app.yaml -n $Namespace
+    kubectl scale deployments lg-fluidapp -n $Namespace --replicas=$NumOfPods
+    $RunningNumOfPods = $(kubectl get pods -n $Namespace --field-selector status.phase=Running).count -1
     while ($NumOfPods -ne $RunningNumOfPods) {
         Write-Host "Pods are in-progress"
         Start-Sleep -s 10
-        $RunningNumOfPods = $(kubectl get pods -n odsp-perf-lg-fluid  --field-selector status.phase=Running).count -1
+        $RunningNumOfPods = $(kubectl get pods -n $Namespace  --field-selector status.phase=Running).count -1
     }
     Write-Host "Pods are created and running"
 }
@@ -47,10 +51,12 @@ workflow RunTest{
 		[Parameter(Mandatory = $true)]
         [string]$NumOfDocsPerPod,
 		[Parameter(Mandatory = $true)]
-        [string]$Profile
+        [string]$Profile,
+		[Parameter(Mandatory = $true)]
+        [string]$Namespace
     )
 	$Tenants = @('1020', '1100', '1220', '1520', '0900', '0001', '0002', '0312', '0420' ,'0500')
-	$Pods = $(kubectl get pods -n odsp-perf-lg-fluid --field-selector status.phase=Running -o json | ConvertFrom-Json).items
+	$Pods = $(kubectl get pods -n $Namespace --field-selector status.phase=Running -o json | ConvertFrom-Json).items
     [int]$PodsCount = $Pods.count
     Write-Output "Load Starting"
     foreach -parallel -ThrottleLimit 10 ($i in 1..$PodsCount) {
@@ -60,7 +66,8 @@ workflow RunTest{
 		$PodId=[int][Math]::Floor(($i + $Tenants.count -1)/$Tenants.count)
         $Command = "node ./dist/nodeStressTest.js --tenant $TenantIdentifier --profile $Profile --numDoc $NumOfDocsPerPod --podId $PodId > testscenario.logs 2>&1 &"
         Write-Output "Exec Command: $Command on Pod: $PodName"
-		kubectl exec $PodName -n odsp-perf-lg-fluid -- bash -c $Command
+		kubectl exec $PodName -n $Namespace -- bash -c $Command
+        Write-Output "Exec Command DONE: on Pod: $PodName"
     }
 	Write-Output "Load Submitted"
 	#kubectl delete namespace odsp-perf-lg-fluid
@@ -68,8 +75,8 @@ workflow RunTest{
 
 function DownloadLogs {
 	Write-Host "DownloadLogs started"
-	kubectl config set-context --current --namespace=odsp-perf-lg-fluid | out-null
-	$Pods = $(kubectl get pods -n odsp-perf-lg-fluid --field-selector status.phase=Running -o json | ConvertFrom-Json).items
+	kubectl config set-context --current --namespace=odsp-fluid-anshul | out-null
+	$Pods = $(kubectl get pods -n odsp-fluid-anshul --field-selector status.phase=Running -o json | ConvertFrom-Json).items
     [int]$PodsCount = $Pods.count
 	$foldername = [guid]::NewGuid()
 	New-Item -Path $foldername -ItemType Directory | out-null
