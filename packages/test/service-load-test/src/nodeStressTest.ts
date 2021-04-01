@@ -7,6 +7,7 @@ import assert from "assert";
 import fs from "fs";
 import child_process from "child_process";
 import commander from "commander";
+import * as applicationInsights from "applicationinsights";
 import { Loader } from "@fluidframework/container-loader";
 import { IFluidCodeDetails } from "@fluidframework/core-interfaces";
 import {
@@ -29,6 +30,19 @@ import { IRunConfig, fluidExport, ILoadTest } from "./loadTestDataStore";
 
 const packageName = `${pkgName}@${pkgVersion}`;
 
+enum EXIT_ERROR {
+    SUCCESS = 0,
+    UNKNOWN = -1,
+
+    FAILED_TO_READ_TESTCONFIGUSER = -11,
+    INVALID_TENANT = -12,
+    FAILED_TO_PARSE_LOGIN_ENV = -13,
+    INVALID_PROFILE = -14,
+    MISSING_URL = -15,
+
+    CLIENT_ERROR = -21,
+}
+
 interface IOdspTestLoginInfo {
     server: string;
     username: string;
@@ -49,6 +63,8 @@ const passwordTokenConfig = (username, password): OdspTokenConfig => ({
     username,
     password,
 });
+
+let telemetryClient: applicationInsights.TelemetryClient;
 
 function createLoader(loginInfo: IOdspTestLoginInfo) {
     const documentServiceFactory = new OdspDocumentServiceFactory(
@@ -89,6 +105,9 @@ async function load(loginInfo: IOdspTestLoginInfo, url: string) {
 }
 
 async function main(this: any) {
+    applicationInsights.setup().start();
+    telemetryClient = applicationInsights.defaultClient;
+
     commander
         .version("0.0.1")
         .requiredOption("-t, --tenant <tenant>", "Which test tenant info to use from testConfig.json", "fluidCI")
@@ -114,16 +133,18 @@ async function main(this: any) {
     } catch (e) {
         console.error("Failed to read testConfigUser.json");
         console.error(e);
-        process.exit(-1);
+        process.exitCode = EXIT_ERROR.FAILED_TO_READ_TESTCONFIGUSER;
+        return;
     }
 
     const tenant: ITestTenant | undefined = config.tenants[tenantArg];
     if (tenant === undefined) {
         console.error("Invalid --tenant argument not found in testConfig.json tenants");
-        process.exit(-1);
+        process.exitCode = EXIT_ERROR.INVALID_TENANT;
+        return;
     }
     const passwords: { [user: string]: string } =
-     JSON.parse(process.env.login__odsp__test__accounts ?? "");
+        JSON.parse(process.env.login__odsp__test__accounts ?? "");
     const user = podId % tenant.usernames.length;
     let password: string;
         try {
@@ -133,7 +154,8 @@ async function main(this: any) {
         } catch (e) {
             console.error("Failed to parse login__odsp__test__accounts env variable");
             console.error(e);
-            process.exit(-1);
+            process.exitCode = EXIT_ERROR.FAILED_TO_PARSE_LOGIN_ENV;
+            return;
         }
     // user_passwords.push(password);
     const loginInfo: IOdspTestLoginInfo = { server: tenant.server, username: tenant.usernames[user], password };
@@ -143,7 +165,8 @@ async function main(this: any) {
     const profile: ILoadTestConfig | undefined = config.profiles[profileArg];
     if (profile === undefined) {
         console.error("Invalid --profile argument not found in testConfig.json profiles");
-        process.exit(-1);
+        process.exitCode = EXIT_ERROR.INVALID_PROFILE;
+        return;
     }
 
     if (log !== undefined) {
@@ -158,17 +181,19 @@ async function main(this: any) {
     if (runId !== undefined) {
         if (url === undefined) {
             console.error("Missing --url argument needed to run child process");
-            process.exit(-1);
+            process.exitCode = EXIT_ERROR.MISSING_URL;
+            return;
         }
         // console.log(`${runId}`);
         result = await runnerProcess(loginInfo, profile, runId, url);
-        process.exit(result);
+    } else {
+        // When runId is not specified, this is the orchestrator process which will spawn child test runners.
+        result = await orchestratorProcess(loginInfo ,
+            { ...profile, name: profileArg, tenetFriendlyName: tenantArg },
+            { urlList, numDoc, podId, debug});
     }
-    // When runId is not specified, this is the orchestrator process which will spawn child test runners.
-    result = await orchestratorProcess(loginInfo ,
-        { ...profile, name: profileArg, tenetFriendlyName: tenantArg },
-        { urlList, numDoc, podId, debug});
-    process.exit(result);
+
+    process.exitCode = result;
 }
 
 /**
@@ -180,19 +205,32 @@ async function runnerProcess(
     runId: number,
     url: string,
 ): Promise<number> {
+    telemetryClient.trackMetric({name: "Test Client Started", value: 1});
+    telemetryClient.trackTrace({message: `${runId}> Starting test client with url: ${url}`});
+
     try {
         const runConfig: IRunConfig = {
             runId,
             testConfig: profile,
         };
         const stressTest = await load(loginInfo, url);
+
         await stressTest.run(runConfig);
         console.log(`${runId.toString().padStart(3)}> exit`);
-        return 0;
+
+        telemetryClient.trackMetric({name: "Test Client Successful", value: 1});
+        telemetryClient.trackTrace({message: `${runId}> Completed test client with url: ${url}`});
+
+        return EXIT_ERROR.SUCCESS;
     } catch (e) {
         console.error(`${runId.toString().padStart(3)}> error: loading test`);
         console.error(e);
-        return -1;
+
+        telemetryClient.trackMetric({name: "Test Client Error", value: 1});
+        telemetryClient.trackTrace({message: `${runId}> Error in test client url: ${url} Error: ${e}`});
+        telemetryClient.trackException({exception: e});
+
+        return EXIT_ERROR.CLIENT_ERROR;
     }
 }
 
@@ -214,6 +252,9 @@ async function orchestratorProcess(
     const numDoc = args.numDoc === undefined ? 1 : args.numDoc;
     const podId = args.podId === undefined ? 1 : args.podId;
     console.log(`You are in orchestratorProcess ${numDoc}`);
+
+    telemetryClient.trackTrace({message: `Starting Orchestrator Process. Docs count: ${numDoc}`});
+
     // const driveIds: string[] = [];
     // const docUrls: string[] = [];
     // let odspTokens: IOdspTokens;
@@ -249,13 +290,13 @@ async function orchestratorProcess(
     const p: Promise<void>[] = [];
     let cnt = 0;
     let offset = Math.floor((podId - 1) / 10) * numDoc;
-    offset = offset % 300; // totalDocUrls are 300
+    offset = args.urlList === undefined ? 0 : (offset % args.urlList.length);
     const leftIndex = offset;
     const rightIndex = offset + numDoc;
-    const urls: string[] | undefined = args.urlList?.slice(leftIndex,rightIndex);
+    const urls: string[] | undefined = args.urlList?.slice(leftIndex, rightIndex);
     let randomOrderUrls: string[] = [];
     if (urls !== undefined) {
-        randomOrderUrls = urls.sort((a, b) => -1 - Math.random());
+        randomOrderUrls = urls.sort((a, b) => 0.5 - Math.random());
     }
     for (let docIndex = 0; docIndex < numDoc; docIndex++) {
         const url = args.urlList === undefined ? "NoUrl" : randomOrderUrls[docIndex];
@@ -277,12 +318,36 @@ async function orchestratorProcess(
             // 9229 is the default and will be used for the root orchestrator process
             childArgs.unshift(`--inspect-brk=${debugPort}`);
         }
-        const process = child_process.spawn(
-            "node",
-            childArgs,
-            { stdio: "inherit" },
-        );
-        p.push(new Promise((resolve) => process.on("close", resolve)));
+
+        try {
+            const process = child_process.spawn(
+                "node",
+                childArgs,
+                { stdio: "inherit" },
+            );
+
+            process.on("exit", (code, signal) => {
+                telemetryClient.trackTrace({
+                    message: `Test Client exited. Code: ${code} Signal: ${signal} Url: ${url}`,
+                });
+            });
+            process.on("error", (err) => {
+                console.error("Error in child process.");
+                console.error(err);
+
+                telemetryClient.trackTrace({ message: `Test Client exited with error. Url: ${url} Error: ${err}` });
+            });
+
+            telemetryClient.trackTrace({ message: `Started test client process. Url: ${url}` });
+            p.push(new Promise((resolve) => process.on("close", resolve)));
+        } catch (e) {
+            console.error("Error in starting child process.");
+            console.error(e);
+
+            telemetryClient.trackTrace({ message: `Error in starting test client. Url: ${url}` });
+            telemetryClient.trackException({ exception: e });
+        }
+
         cnt = (cnt + 1) % 10;
     }
     await Promise.all(p);
@@ -296,12 +361,16 @@ async function orchestratorProcess(
     console.log(`Start Time : ${startDatetime}`);
     console.log(`End Time : ${endDatetime}`);
 
-    return 0;
+    return EXIT_ERROR.SUCCESS;
 }
 
 main().catch(
     (error) => {
         console.error(error);
-        process.exit(-1);
+        telemetryClient.trackException({exception: error});
+        process.exitCode = EXIT_ERROR.UNKNOWN;
     },
-);
+).finally(() => {
+    telemetryClient.flush();
+    applicationInsights.dispose();
+});
