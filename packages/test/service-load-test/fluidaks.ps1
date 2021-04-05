@@ -13,9 +13,7 @@ function RunLoadTest {
     Write-Host "Starting RunLoadTest NumOfPods: $NumOfPods, NumOfDocsPerPod: $NumOfDocsPerPod, Profile: $Profile"
 	kubectl config set-context --current --namespace=odsp-perf-lg-fluid | out-null
 	CreateInfra -NumOfPods $NumOfPods
-	$Pods = $(kubectl get pods -n odsp-perf-lg-fluid --field-selector status.phase=Running -o json | ConvertFrom-Json).items
-	$PodName = $Pods[0].metadata.name
-	#GenerateConfig -PodName $PodName -NumOfDocsPerTenant 2
+	#GenerateConfig -NumOfDocsPerTenant 300
 	#DownloadConfig -PodName $PodName
 	#UploadConfig
 	RunTest -NumOfDocsPerPod $NumOfDocsPerPod -Profile $Profile
@@ -49,11 +47,12 @@ workflow RunTest{
 		[Parameter(Mandatory = $true)]
         [string]$Profile
     )
-	$Tenants = @('1020', '1100', '1220', '1520', '0900', '0001', '0002', '0312', '0420' ,'0500')
+
+	$Tenants = @('1100','21220','1520','0900','0001','0002','0312','0420','0500','0920','0220','1420','1416','0112','11220')
 	$Pods = $(kubectl get pods -n odsp-perf-lg-fluid --field-selector status.phase=Running -o json | ConvertFrom-Json).items
     [int]$PodsCount = $Pods.count
     Write-Output "Load Starting"
-    foreach -parallel -ThrottleLimit 10 ($i in 1..$PodsCount) {
+    foreach -parallel -ThrottleLimit 8 ($i in 1..$PodsCount) {
 		$PodName = $Pods[$i - 1].metadata.name
 		$TenantIndex = ($i-1) % $Tenants.count
 		$TenantIdentifier = $Tenants[$TenantIndex]
@@ -61,6 +60,7 @@ workflow RunTest{
         $Command = "node ./dist/nodeStressTest.js --tenant $TenantIdentifier --profile $Profile --numDoc $NumOfDocsPerPod --podId $PodId > testscenario.logs 2>&1 &"
         Write-Output "Exec Command: $Command on Pod: $PodName"
 		kubectl exec $PodName -n odsp-perf-lg-fluid -- bash -c $Command
+		Write-Output "Exec Command DONE: on Pod: $PodName"
     }
 	Write-Output "Load Submitted"
 	#kubectl delete namespace odsp-perf-lg-fluid
@@ -99,34 +99,45 @@ function UploadConfig {
 }
 
 function DownloadConfig {
-	[CmdletBinding()]
-    Param(
-		[Parameter(Mandatory = $true)]
-        [string]$PodName
-    )
 	Write-Host "DownloadConfig started"
 	kubectl config set-context --current --namespace=odsp-perf-lg-fluid | out-null
-	kubectl cp $PodName`:/app/testConfigUser.json testConfigUser.json  | out-null
+	$Pods = $(kubectl get pods -n odsp-perf-lg-fluid --field-selector status.phase=Running -o json | ConvertFrom-Json).items
+    [int]$PodsCount = $Pods.count
+	$foldername = [guid]::NewGuid()
+	New-Item -Path $foldername -ItemType Directory | out-null
+	Write-Host "A new directory is created: $foldername"
+	Write-Host "Config will be downloaded in this new directory: $foldername"
+    foreach ($i in 1..$PodsCount)  {
+		$PodName = $Pods[$i - 1].metadata.name
+        Write-Host "Started DownloadConfig for Pod: $PodName"
+		kkubectl cp $PodName`:/app/testConfigUser.json $PodName-testConfigUser.json  | out-null
+		Write-Host "Completed DownloadConfig for Pod: $PodName"
+    }
 	Write-Host "DownloadConfig finished"
 }
 
-function GenerateConfig{
+workflow GenerateConfig_internal{
 	[CmdletBinding()]
     Param(
 		[Parameter(Mandatory = $true)]
-        [string]$PodName,
-		[Parameter(Mandatory = $true)]
-        [string]$NumOfDocsPerTenant
+        [string]$NumOfDocsPerPod
     )
-	$Tenants = @('1020', '1100', '1220', '1520', '0900', '0001', '0002', '0312', '0420' ,'0500')
-	[int]$TenantsCount = $Tenants.count
-    Write-Host "GenerateConfig starting"
-	foreach ($i in 1..$TenantsCount) {
-		$TenantName = $Tenants[$i - 1]
-        $Command = "node ./dist/createDocument.js --tenant $TenantName --numDoc $NumOfDocsPerTenant >> docGenerator.logs 2>&1"
-        Write-Host "Exec Command: $Command on Pod: $PodName"
+	$Tenants = @('1100','21220','1520','0900','0001','0002','0312','0420','0500','0920','0220','1420','1416','0112','11220')
+	$Pods = $(kubectl get pods -n odsp-perf-lg-fluid --field-selector status.phase=Running -o json | ConvertFrom-Json).items
+    [int]$PodsCount = $Pods.count
+    Write-Output "GenerateConfig starting"
+    foreach -parallel -ThrottleLimit 5 ($i in 1..$PodsCount) {
+		$PodName = $Pods[$i - 1].metadata.name
+		$TenantIndex = ($i-1) % $Tenants.count
+		$TenantIdentifier = $Tenants[$TenantIndex]
+        $Command = "node ./dist/createDocument.js --tenant $TenantIdentifier --numDoc $NumOfDocsPerPod > testscenario.logs 2>&1 &"
+        Write-Output "Exec Command: $Command on Pod: $PodName"
 		kubectl exec $PodName -n odsp-perf-lg-fluid -- bash -c $Command
+		Write-Output "Exec Command DONE: on Pod: $PodName"
     }
-	Write-Host "GenerateConfig completed"
+	Write-Output "GenerateConfig completed"
+}
 
+function GenerateConfig {
+	GenerateConfig_internal -NumOfDocsPerPod 300
 }
