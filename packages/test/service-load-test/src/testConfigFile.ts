@@ -23,4 +23,5 @@ export interface ILoadTestConfig {
     numClients: number,
     totalSendCount: number,
     readWriteCycleMs: number,
+    connectionRetryCount: number,
 }
