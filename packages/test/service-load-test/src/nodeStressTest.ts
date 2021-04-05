@@ -136,7 +136,6 @@ async function main(this: any) {
         process.exitCode = EXIT_ERROR.FAILED_TO_READ_TESTCONFIGUSER;
         return;
     }
-
     const tenant: ITestTenant | undefined = config.tenants[tenantArg];
     if (tenant === undefined) {
         console.error("Invalid --tenant argument not found in testConfig.json tenants");
@@ -144,7 +143,7 @@ async function main(this: any) {
         return;
     }
     const passwords: { [user: string]: string } =
-        JSON.parse(process.env.login__odsp__test__accounts ?? "");
+     JSON.parse(fs.readFileSync("./loginOdspTestAccounts.json", "utf-8"));
     const user = podId % tenant.usernames.length;
     let password: string;
         try {

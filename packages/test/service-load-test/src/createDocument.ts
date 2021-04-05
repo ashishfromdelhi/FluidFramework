@@ -119,11 +119,11 @@ async function main(this: any) {
         process.exit(-1);
     }
     const passwords: { [user: string]: string } =
-        JSON.parse(process.env.login__odsp__test__accounts ?? "");
+     JSON.parse(fs.readFileSync("./loginOdspTestAccounts.json", "utf-8"));
     const loginInfos: IOdspTestLoginInfo[] = [];
-    const totalUsers = tenant.usernames.length;
+    // const totalUsers = tenant.usernames.length;
     // const urls: string[] = [];
-    for (let user = 0; user < totalUsers; user++) {
+    for (let user = 0; user < 10; user++) {
         let password: string;
         try {
             // Expected format of login__odsp__test__accounts is simply string key-value pairs of username and password
@@ -140,8 +140,9 @@ async function main(this: any) {
     }
     const urlsLen = config.tenants[tenantArg]?.docUrls.length;
     config.tenants[tenantArg]?.docUrls.splice(0,urlsLen);
-    for (let user = 0; user < totalUsers; user++) {
+    for (let user = 0; user < 10; user++) {
         let odspTokens: IOdspTokens;
+        console.log(`Getting token for ${loginInfos[user].username}`);
         try {
             // Ensure fresh tokens here so the test runners have them cached
             odspTokens = await odspTokenManager.getOdspTokens(
@@ -179,7 +180,10 @@ async function main(this: any) {
     }
     console.log(`${config.tenants[tenantArg]?.docUrls.length}`);
     const data = JSON.stringify(config);
-    fs.writeFileSync("testConfigUser.json", data);
+    const name = `${tenantArg}_testConfigUser.json`;
+    console.log(`${name}`);
+    fs.writeFileSync(name, data);
+    // fs.writeFileSync("testConfigUser.json", data);
     process.exit(0);
 }
 main().catch(
