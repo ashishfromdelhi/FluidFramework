@@ -21,3 +21,5 @@ bundleAnalysis
 
 # Misc pipeline artifacts
 artifacts
+
+lerna-package-lock.json

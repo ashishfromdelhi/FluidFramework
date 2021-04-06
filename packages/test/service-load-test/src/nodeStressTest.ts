@@ -184,14 +184,13 @@ async function main(this: any) {
             return;
         }
         // console.log(`${runId}`);
-        result = await runnerProcess(loginInfo, profile, runId, url);
+        result = await runnerProcess(loginInfo, profile, runId, url,0, profile.connectionRetryCount);
     } else {
         // When runId is not specified, this is the orchestrator process which will spawn child test runners.
         result = await orchestratorProcess(loginInfo ,
             { ...profile, name: profileArg, tenetFriendlyName: tenantArg },
             { urlList, numDoc, podId, debug});
     }
-
     process.exitCode = result;
 }
 
@@ -203,8 +202,11 @@ async function runnerProcess(
     profile: ILoadTestConfig,
     runId: number,
     url: string,
+    round: number,
+    maxRetries: number,
 ): Promise<number> {
-    telemetryClient.trackMetric({name: "Test Client Started", value: 1});
+    telemetryClient.trackMetric({name: `Test Client Started`, value: 1});
+    telemetryClient.trackMetric({name: `Test Client Started Round-${round}`, value: 1});
     telemetryClient.trackTrace({message: `${runId}> Starting test client with url: ${url}`});
 
     try {
@@ -215,21 +217,35 @@ async function runnerProcess(
         const stressTest = await load(loginInfo, url);
 
         await stressTest.run(runConfig);
-        console.log(`${runId.toString().padStart(3)}> exit`);
-
         telemetryClient.trackMetric({name: "Test Client Successful", value: 1});
         telemetryClient.trackTrace({message: `${runId}> Completed test client with url: ${url}`});
-
+        console.log(`${runId.toString().padStart(3)}> exit`);
         return EXIT_ERROR.SUCCESS;
     } catch (e) {
+        const currentdate = new Date();
+        const currentTime = `Last Sync: ${  currentdate.getDate().toString()  }/${
+                     (currentdate.getMonth() + 1).toString()  }/${
+                     currentdate.getFullYear().toString()  } @ ${
+                        currentdate.getHours().toString()  }:${
+                        currentdate.getMinutes().toString()  }:${
+                        currentdate.getSeconds().toString()}`;
         console.error(`${runId.toString().padStart(3)}> error: loading test`);
         console.error(e);
-
         telemetryClient.trackMetric({name: "Test Client Error", value: 1});
-        telemetryClient.trackTrace({message: `${runId}> Error in test client url: ${url} Error: ${e}`});
+        telemetryClient.trackMetric({name: `Test Client Error Round-${round}`, value: 1});
+        telemetryClient.trackTrace({message: `${runId}> Error in test client url: ${url} Error: ${e},`
+            + ` RetryRemaining: ${maxRetries}`});
         telemetryClient.trackException({exception: e});
 
-        return EXIT_ERROR.CLIENT_ERROR;
+        if (maxRetries - round > 0) {
+            console.error(`${currentTime} ::: Retrying failed runnerProcess ${runId} ::: ${url}`);
+            await runnerProcess(loginInfo, profile, runId, url, round + 1, maxRetries);
+        }
+        else {
+            telemetryClient.trackMetric({name: `Test Client Completed Unsuccessfully`, value: 1});
+            return EXIT_ERROR.CLIENT_ERROR;
+        }
+        return  EXIT_ERROR.SUCCESS;
     }
 }
 
