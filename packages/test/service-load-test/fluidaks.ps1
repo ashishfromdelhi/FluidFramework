@@ -55,6 +55,7 @@ workflow RunTest{
     )
 	$Tenants = @('1100','21220','1520','0900','0001','0002','0312','0420','0500','0920','0220','1420','1416','0112','11220')
 	$Pods = $(kubectl get pods -n $Namespace --field-selector status.phase=Running -o json | ConvertFrom-Json).items
+    $testUid = [guid]::NewGuid()
     [int]$PodsCount = $Pods.count
     Write-Output "Load Starting"
     foreach -parallel -ThrottleLimit 8 ($i in 1..$PodsCount) {
@@ -62,7 +63,7 @@ workflow RunTest{
 		$TenantIndex = ($i-1) % $Tenants.count
 		$TenantIdentifier = $Tenants[$TenantIndex]
 		$PodId=[int][Math]::Floor(($i + $Tenants.count -1)/$Tenants.count)
-        $Command = "node ./dist/nodeStressTest.js --tenant $TenantIdentifier --profile $Profile --numDoc $NumOfDocsPerPod --podId $PodId > testscenario.logs 2>&1 &"
+        $Command = "node ./dist/nodeStressTest.js --tenant $TenantIdentifier --profile $Profile --numDoc $NumOfDocsPerPod --podId $PodId --testUid $testUid > testscenario.logs 2>&1 &"
         Write-Output "Exec Command: $Command on Pod: $PodName"
 		kubectl exec $PodName -n $Namespace -- bash -c $Command
         Write-Output "Exec Command DONE: on Pod: $PodName"

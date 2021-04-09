@@ -22,13 +22,34 @@ import {
     getMicrosoftConfiguration,
     OdspTokenConfig,
 } from "@fluidframework/tool-utils";
+import { TelemetryLogger, ITelemetryPropertyGetters } from "@fluidframework/telemetry-utils";
+import { ITelemetryBaseEvent, ITelemetryProperties } from "@fluidframework/common-definitions";
 
 import { getLoginPageUrl, getOdspScope } from "@fluidframework/odsp-doclib-utils";
+import { v4 as uuidv4 } from "uuid";
 import { pkgName, pkgVersion } from "./packageVersion";
 import { ITestConfig, ILoadTestConfig, ITestTenant } from "./testConfigFile";
 import { IRunConfig, fluidExport, ILoadTest } from "./loadTestDataStore";
 
 const packageName = `${pkgName}@${pkgVersion}`;
+
+let telemetryClient: applicationInsights.TelemetryClient;
+
+class AppInsightLogger extends TelemetryLogger {
+    public constructor(
+        protected readonly namespace?: string,
+        protected readonly properties?: ITelemetryProperties,
+        protected readonly propertyGetters?: ITelemetryPropertyGetters) {
+        super(namespace, properties, propertyGetters);
+    }
+
+    public send(event: ITelemetryBaseEvent): void {
+        telemetryClient.trackEvent({
+            name: event.eventName,
+            properties: event,
+        });
+    }
+}
 
 enum EXIT_ERROR {
     SUCCESS = 0,
@@ -64,8 +85,6 @@ const passwordTokenConfig = (username, password): OdspTokenConfig => ({
     password,
 });
 
-let telemetryClient: applicationInsights.TelemetryClient;
-
 function createLoader(loginInfo: IOdspTestLoginInfo) {
     const documentServiceFactory = new OdspDocumentServiceFactory(
         async (options: OdspResourceTokenFetchOptions) => {
@@ -93,6 +112,7 @@ function createLoader(loginInfo: IOdspTestLoginInfo) {
         urlResolver,
         documentServiceFactory,
         codeLoader,
+        logger: new AppInsightLogger(),
     });
     return loader;
 }
@@ -105,7 +125,10 @@ async function load(loginInfo: IOdspTestLoginInfo, url: string) {
 }
 
 async function main(this: any) {
-    applicationInsights.setup().start();
+    applicationInsights
+        .setup()
+        .setSendLiveMetrics(true)
+        .start();
     telemetryClient = applicationInsights.defaultClient;
 
     commander
@@ -117,7 +140,8 @@ async function main(this: any) {
         .option("-d, --debug", "Debug child processes via --inspect-brk")
         .option("-l, --log <filter>", "Filter debug logging. If not provided, uses DEBUG env variable.")
         .option("-z, --numDoc <numDoc>", "If it is not provided then default value as 1 will be used.")
-        .option("-pid, --podId <podId>","If it is not provided then default value as 1 will be used.")
+        .option("-pid, --podId <podId>", "If it is not provided then default value as 1 will be used.")
+        .option("-tid, --testUid <testUid>", "If it is not provided then default value as uuid will be used.")
         .parse(process.argv);
     const tenantArg: string = commander.tenant;
     const profileArg: string = commander.profile;
@@ -127,6 +151,8 @@ async function main(this: any) {
     const log: string | undefined = commander.log;
     const numDoc: number | undefined = commander.numDoc === undefined ? 1 : parseInt(commander.numDoc, 10);
     const podId: number | undefined = commander.podId === undefined ? 1 : parseInt(commander.podId, 10);
+    const testUid: string = commander.testUid === undefined ? uuidv4() : commander.testUid;
+
     let config: ITestConfig;
     try {
         config = JSON.parse(fs.readFileSync("./testConfigUser.json", "utf-8"));
@@ -143,19 +169,19 @@ async function main(this: any) {
         return;
     }
     const passwords: { [user: string]: string } =
-     JSON.parse(fs.readFileSync("./loginOdspTestAccounts.json", "utf-8"));
+        JSON.parse(fs.readFileSync("./loginOdspTestAccounts.json", "utf-8"));
     const user = podId % tenant.usernames.length;
     let password: string;
-        try {
-            // Expected format of login__odsp__test__accounts is simply string key-value pairs of username and password
-            password = passwords[tenant.usernames[user]];
-            assert(password, "Expected to find Password in an env variable since it wasn't provided via script param");
-        } catch (e) {
-            console.error("Failed to parse login__odsp__test__accounts env variable");
-            console.error(e);
-            process.exitCode = EXIT_ERROR.FAILED_TO_PARSE_LOGIN_ENV;
-            return;
-        }
+    try {
+        // Expected format of login__odsp__test__accounts is simply string key-value pairs of username and password
+        password = passwords[tenant.usernames[user]];
+        assert(password, "Expected to find Password in an env variable since it wasn't provided via script param");
+    } catch (e) {
+        console.error("Failed to parse login__odsp__test__accounts env variable");
+        console.error(e);
+        process.exitCode = EXIT_ERROR.FAILED_TO_PARSE_LOGIN_ENV;
+        return;
+    }
     // user_passwords.push(password);
     const loginInfo: IOdspTestLoginInfo = { server: tenant.server, username: tenant.usernames[user], password };
     // console.log(`${loginInfo.username} : ${loginInfo.password}`);
@@ -167,6 +193,8 @@ async function main(this: any) {
         process.exitCode = EXIT_ERROR.INVALID_PROFILE;
         return;
     }
+
+    telemetryClient.commonProperties.TestUid = testUid;
 
     if (log !== undefined) {
         process.env.DEBUG = log;
@@ -183,13 +211,18 @@ async function main(this: any) {
             process.exitCode = EXIT_ERROR.MISSING_URL;
             return;
         }
+
+        telemetryClient.commonProperties.runId = runId.toString();
+        telemetryClient.commonProperties.podId = podId.toString();
+        telemetryClient.commonProperties.url = url;
+
         // console.log(`${runId}`);
-        result = await runnerProcess(loginInfo, profile, runId, url,0, profile.connectionRetryCount);
+        result = await runnerProcess(loginInfo, profile, runId, url, 0, profile.connectionRetryCount);
     } else {
         // When runId is not specified, this is the orchestrator process which will spawn child test runners.
-        result = await orchestratorProcess(loginInfo ,
+        result = await orchestratorProcess(loginInfo,
             { ...profile, name: profileArg, tenetFriendlyName: tenantArg },
-            { urlList, numDoc, podId, debug});
+            { testUid, urlList, numDoc, podId, debug });
     }
     process.exitCode = result;
 }
@@ -205,9 +238,9 @@ async function runnerProcess(
     round: number,
     maxRetries: number,
 ): Promise<number> {
-    telemetryClient.trackMetric({name: `Test Client Started`, value: 1});
-    telemetryClient.trackMetric({name: `Test Client Started Round-${round}`, value: 1});
-    telemetryClient.trackTrace({message: `${runId}> Starting test client with url: ${url}`});
+    telemetryClient.trackMetric({ name: `Test Client Started`, value: 1 });
+    telemetryClient.trackMetric({ name: `Test Client Started Round-${round}`, value: 1 });
+    telemetryClient.trackTrace({ message: `${runId}> Starting test client with url: ${url}` });
 
     try {
         const runConfig: IRunConfig = {
@@ -217,35 +250,38 @@ async function runnerProcess(
         const stressTest = await load(loginInfo, url);
 
         await stressTest.run(runConfig);
-        telemetryClient.trackMetric({name: "Test Client Successful", value: 1});
-        telemetryClient.trackTrace({message: `${runId}> Completed test client with url: ${url}`});
+        telemetryClient.trackMetric({ name: "Test Client Successful", value: 1 });
+        telemetryClient.trackTrace({ message: `${runId}> Completed test client with url: ${url}` });
         console.log(`${runId.toString().padStart(3)}> exit`);
         return EXIT_ERROR.SUCCESS;
     } catch (e) {
         const currentdate = new Date();
-        const currentTime = `Last Sync: ${  currentdate.getDate().toString()  }/${
-                     (currentdate.getMonth() + 1).toString()  }/${
-                     currentdate.getFullYear().toString()  } @ ${
-                        currentdate.getHours().toString()  }:${
-                        currentdate.getMinutes().toString()  }:${
-                        currentdate.getSeconds().toString()}`;
+        const currentTime = `Last Sync: `
+            + `${currentdate.getDate().toString()}`
+            + `/${(currentdate.getMonth() + 1).toString()}`
+            + `/${currentdate.getFullYear().toString()}`
+            + ` @ ${currentdate.getHours().toString()}`
+            + `:${currentdate.getMinutes().toString()}`
+            + `:${currentdate.getSeconds().toString()}`;
         console.error(`${runId.toString().padStart(3)}> error: loading test`);
         console.error(e);
-        telemetryClient.trackMetric({name: "Test Client Error", value: 1});
-        telemetryClient.trackMetric({name: `Test Client Error Round-${round}`, value: 1});
-        telemetryClient.trackTrace({message: `${runId}> Error in test client url: ${url} Error: ${e},`
-            + ` RetryRemaining: ${maxRetries}`});
-        telemetryClient.trackException({exception: e});
+        telemetryClient.trackMetric({ name: "Test Client Error", value: 1 });
+        telemetryClient.trackMetric({ name: `Test Client Error Round-${round}`, value: 1 });
+        telemetryClient.trackTrace({
+            message: `${runId}> Error in test client url: ${url} Error: ${e},`
+                + ` RetryRemaining: ${maxRetries}`,
+        });
+        telemetryClient.trackException({ exception: e });
 
         if (maxRetries - round > 0) {
             console.error(`${currentTime} ::: Retrying failed runnerProcess ${runId} ::: ${url}`);
             await runnerProcess(loginInfo, profile, runId, url, round + 1, maxRetries);
         }
         else {
-            telemetryClient.trackMetric({name: `Test Client Completed Unsuccessfully`, value: 1});
+            telemetryClient.trackMetric({ name: `Test Client Completed Unsuccessfully`, value: 1 });
             return EXIT_ERROR.CLIENT_ERROR;
         }
-        return  EXIT_ERROR.SUCCESS;
+        return EXIT_ERROR.SUCCESS;
     }
 }
 
@@ -254,21 +290,22 @@ async function runnerProcess(
  */
 async function orchestratorProcess(
     loginInfo: IOdspTestLoginInfo,
-    profile: ILoadTestConfig & { name: string } & {tenetFriendlyName: string},
-    args: { urlList?: string[], numDoc?: number, podId?: number, debug?: true },
+    profile: ILoadTestConfig & { name: string } & { tenetFriendlyName: string },
+    args: { testUid: string, urlList?: string[], numDoc?: number, podId?: number, debug?: true },
 ): Promise<number> {
     const currentdate = new Date();
-    const startDatetime = `Last Sync: ${  currentdate.getDate().toString()  }/${
-                 (currentdate.getMonth() + 1).toString()   }/${
-                 currentdate.getFullYear().toString()  } @ ${
-                 currentdate.getHours().toString()  }:${
-                 currentdate.getMinutes().toString()  }:${
-                 currentdate.getSeconds().toString()}`;
+    const startDatetime = `Last Sync: `
+        + `${currentdate.getDate().toString()}`
+        + `/${(currentdate.getMonth() + 1).toString()}`
+        + `/${currentdate.getFullYear().toString()}`
+        + ` @ ${currentdate.getHours().toString()}`
+        + `:${currentdate.getMinutes().toString()}`
+        + `:${currentdate.getSeconds().toString()}`;
     const numDoc = args.numDoc === undefined ? 1 : args.numDoc;
     const podId = args.podId === undefined ? 1 : args.podId;
     console.log(`You are in orchestratorProcess ${numDoc}`);
 
-    telemetryClient.trackTrace({message: `Starting Orchestrator Process. Docs count: ${numDoc}`});
+    telemetryClient.trackTrace({ message: `Starting Orchestrator Process. Docs count: ${numDoc}` });
 
     // const driveIds: string[] = [];
     // const docUrls: string[] = [];
@@ -290,8 +327,8 @@ async function orchestratorProcess(
             true /* forceReauth */,
         );
     } catch (ex) {
-    // Log the login page url in case the caller needs to allow consent for this app
-    const loginPageUrl = getLoginPageUrl(
+        // Log the login page url in case the caller needs to allow consent for this app
+        const loginPageUrl = getLoginPageUrl(
             loginInfo.server,
             getMicrosoftConfiguration(),
             getOdspScope(loginInfo.server),
@@ -317,7 +354,7 @@ async function orchestratorProcess(
         const url = args.urlList === undefined ? "NoUrl" : randomOrderUrls[docIndex];
         // console.log(`user auth within clients loop  : ${loginInfo.username}`);
         const estRunningTimeMin = Math.floor(2 * profile.totalSendCount /
-         (profile.opRatePerMin * profile.numClients));
+            (profile.opRatePerMin * profile.numClients));
         // console.log(`Authenticated as user: ${loginInfo.username}`);
         // console.log(`Selected test profile: ${profile.name}`);
         console.log(`Estimated run time: ${estRunningTimeMin} minutes\n`);
@@ -327,7 +364,8 @@ async function orchestratorProcess(
             "--tenant", profile.tenetFriendlyName,
             "--profile", profile.name,
             "--runId", (cnt).toString(),
-            "--url", url];
+            "--url", url,
+            "--testUid", args.testUid];
         if (args.debug) {
             const debugPort = 9230 + docIndex;
             // 9229 is the default and will be used for the root orchestrator process
@@ -367,12 +405,13 @@ async function orchestratorProcess(
     }
     await Promise.all(p);
     const currentdate_end = new Date();
-    const endDatetime = `Last Sync: ${  currentdate_end.getDate().toString()  }/${
-                 (currentdate_end.getMonth() + 1).toString()  }/${
-                 currentdate_end.getFullYear().toString()  } @ ${
-                 currentdate_end.getHours().toString()  }:${
-                 currentdate_end.getMinutes().toString()  }:${
-                 currentdate_end.getSeconds().toString()}`;
+    const endDatetime = `Last Sync: `
+        + `${currentdate_end.getDate().toString()}`
+        + `/${(currentdate_end.getMonth() + 1).toString()}`
+        + `/${currentdate_end.getFullYear().toString()}`
+        + ` @ ${currentdate_end.getHours().toString()}`
+        + `:${currentdate_end.getMinutes().toString()}`
+        + `:${currentdate_end.getSeconds().toString()}`;
     console.log(`Start Time : ${startDatetime}`);
     console.log(`End Time : ${endDatetime}`);
 
@@ -382,7 +421,7 @@ async function orchestratorProcess(
 main().catch(
     (error) => {
         console.error(error);
-        telemetryClient.trackException({exception: error});
+        telemetryClient.trackException({ exception: error });
         process.exitCode = EXIT_ERROR.UNKNOWN;
     },
 ).finally(() => {
