@@ -364,6 +364,7 @@ async function orchestratorProcess(
             "--tenant", profile.tenetFriendlyName,
             "--profile", profile.name,
             "--runId", (cnt).toString(),
+            "--podId", podId.toString(),
             "--url", url,
             "--testUid", args.testUid];
         if (args.debug) {
