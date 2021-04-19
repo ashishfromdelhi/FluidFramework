@@ -53,12 +53,13 @@ workflow RunTest{
 		[Parameter(Mandatory = $true)]
         [string]$Namespace
     )
-	$Tenants = @('1100','21220','1520','0900','0001','0002','0312','0420','0500','0920','0220','1420','1416','0112','11220')
+	$Tenants = @('21220','1520','0900','0001','0002','0312','0420','0500','0920','0220')
 	$Pods = $(kubectl get pods -n $Namespace --field-selector status.phase=Running -o json | ConvertFrom-Json).items
     $testUid = [guid]::NewGuid()
     [int]$PodsCount = $Pods.count
-    Write-Output "Load Starting"
-    foreach -parallel -ThrottleLimit 8 ($i in 1..$PodsCount) {
+    Write-Output "Load Starting ${testUid}"
+
+    foreach -parallel -ThrottleLimit 10 ($i in 1..$PodsCount) {
 		$PodName = $Pods[$i - 1].metadata.name
 		$TenantIndex = ($i-1) % $Tenants.count
 		$TenantIdentifier = $Tenants[$TenantIndex]

@@ -31,6 +31,8 @@ import { pkgName, pkgVersion } from "./packageVersion";
 import { ITestConfig, ILoadTestConfig, ITestTenant } from "./testConfigFile";
 import { IRunConfig, fluidExport, ILoadTest } from "./loadTestDataStore";
 
+const USERS_PER_DOC = 10;
+
 const packageName = `${pkgName}@${pkgVersion}`;
 
 let telemetryClient: applicationInsights.TelemetryClient;
@@ -125,11 +127,10 @@ async function load(loginInfo: IOdspTestLoginInfo, url: string) {
 }
 
 async function main(this: any) {
-    applicationInsights
-        .setup()
-        .setSendLiveMetrics(true)
-        .start();
+    applicationInsights.setup().start();
     telemetryClient = applicationInsights.defaultClient;
+
+    telemetryClient.trackTrace({ message: `Process started. Arguments: ${process.argv.join(" ")}` });
 
     commander
         .version("0.0.1")
@@ -195,14 +196,17 @@ async function main(this: any) {
     }
 
     telemetryClient.commonProperties.TestUid = testUid;
+    telemetryClient.commonProperties.user = loginInfo.username;
 
     if (log !== undefined) {
         process.env.DEBUG = log;
     }
+
     // console.log(`------------------  ${loginInfos.length} ------------`);
     // for (const loginInfo of loginInfos) {
     //     console.log(`${loginInfo.server} , ${loginInfo.username} , ${loginInfo.password}`);
     // }
+
     let result: number;
     // When runId is specified (with url), kick off a single test runner and exit when it's finished
     if (runId !== undefined) {
@@ -255,14 +259,6 @@ async function runnerProcess(
         console.log(`${runId.toString().padStart(3)}> exit`);
         return EXIT_ERROR.SUCCESS;
     } catch (e) {
-        const currentdate = new Date();
-        const currentTime = `Last Sync: `
-            + `${currentdate.getDate().toString()}`
-            + `/${(currentdate.getMonth() + 1).toString()}`
-            + `/${currentdate.getFullYear().toString()}`
-            + ` @ ${currentdate.getHours().toString()}`
-            + `:${currentdate.getMinutes().toString()}`
-            + `:${currentdate.getSeconds().toString()}`;
         console.error(`${runId.toString().padStart(3)}> error: loading test`);
         console.error(e);
         telemetryClient.trackMetric({ name: "Test Client Error", value: 1 });
@@ -274,7 +270,8 @@ async function runnerProcess(
         telemetryClient.trackException({ exception: e });
 
         if (maxRetries - round > 0) {
-            console.error(`${currentTime} ::: Retrying failed runnerProcess ${runId} ::: ${url}`);
+            console.error(`Last Sync: ${new Date().toLocaleString()} `
+                + `::: Retrying failed runnerProcess ${runId} ::: ${url}`);
             await runnerProcess(loginInfo, profile, runId, url, round + 1, maxRetries);
         }
         else {
@@ -293,14 +290,7 @@ async function orchestratorProcess(
     profile: ILoadTestConfig & { name: string } & { tenetFriendlyName: string },
     args: { testUid: string, urlList?: string[], numDoc?: number, podId?: number, debug?: true },
 ): Promise<number> {
-    const currentdate = new Date();
-    const startDatetime = `Last Sync: `
-        + `${currentdate.getDate().toString()}`
-        + `/${(currentdate.getMonth() + 1).toString()}`
-        + `/${currentdate.getFullYear().toString()}`
-        + ` @ ${currentdate.getHours().toString()}`
-        + `:${currentdate.getMinutes().toString()}`
-        + `:${currentdate.getSeconds().toString()}`;
+    const startDatetime = `Last Sync: ${new Date().toLocaleString()}`;
     const numDoc = args.numDoc === undefined ? 1 : args.numDoc;
     const podId = args.podId === undefined ? 1 : args.podId;
     console.log(`You are in orchestratorProcess ${numDoc}`);
@@ -338,20 +328,33 @@ async function orchestratorProcess(
         console.log(`Go here allow the app: ${loginPageUrl}\n`);
         throw ex;
     }
+
     // console.log(`${odspTokens.accessToken}  ************   ${args.urlList?.length}  ************`);
     const p: Promise<void>[] = [];
-    let cnt = 0;
-    let offset = Math.floor((podId - 1) / 10) * numDoc;
-    offset = args.urlList === undefined ? 0 : (offset % args.urlList.length);
-    const leftIndex = offset;
-    const rightIndex = offset + numDoc;
-    const urls: string[] | undefined = args.urlList?.slice(leftIndex, rightIndex);
-    let randomOrderUrls: string[] = [];
-    if (urls !== undefined) {
-        randomOrderUrls = urls.sort((a, b) => 0.5 - Math.random());
+
+    // Calculate doc ranges for test
+    const offset = Math.floor((podId - 1) / USERS_PER_DOC) * numDoc;
+
+    if (!args.urlList) {
+        throw new Error("No URL list provided.");
     }
+
+    // Avoid repetation of URLs
+    if (offset < 0 || offset > (args.urlList?.length - numDoc)) {
+        throw new Error(`Incorrect number of documents. Offset: ${offset} URL Cnt: ${args.urlList?.length}`);
+    }
+
+    // This is to round robin the start of user for doc.
+    const startIndex = (podId - 1) % USERS_PER_DOC;
+
+    // Trigger individual test clients
     for (let docIndex = 0; docIndex < numDoc; docIndex++) {
-        const url = args.urlList === undefined ? "NoUrl" : randomOrderUrls[docIndex];
+        // Wait for random time 5-15sec.
+        await new Promise((r) => setTimeout(r, 5000 + (10000 * Math.random())));
+
+        // Circular list
+        const url = args.urlList[offset + (startIndex + docIndex) % numDoc];
+
         // console.log(`user auth within clients loop  : ${loginInfo.username}`);
         const estRunningTimeMin = Math.floor(2 * profile.totalSendCount /
             (profile.opRatePerMin * profile.numClients));
@@ -359,11 +362,12 @@ async function orchestratorProcess(
         // console.log(`Selected test profile: ${profile.name}`);
         console.log(`Estimated run time: ${estRunningTimeMin} minutes\n`);
         console.log(` ${url}  ^^^^^^^^^^^^^^^ ${loginInfo.username}`);
+
         const childArgs: string[] = [
             "./dist/nodeStressTest.js",
             "--tenant", profile.tenetFriendlyName,
             "--profile", profile.name,
-            "--runId", (cnt).toString(),
+            "--runId", (docIndex).toString(),
             "--podId", podId.toString(),
             "--url", url,
             "--testUid", args.testUid];
@@ -382,37 +386,32 @@ async function orchestratorProcess(
 
             process.on("exit", (code, signal) => {
                 telemetryClient.trackTrace({
-                    message: `Test Client exited. Code: ${code} Signal: ${signal} Url: ${url}`,
+                    message: `Test Client exited. Code: ${code} Signal: ${signal}`,
                 });
             });
             process.on("error", (err) => {
                 console.error("Error in child process.");
                 console.error(err);
 
-                telemetryClient.trackTrace({ message: `Test Client exited with error. Url: ${url} Error: ${err}` });
+                telemetryClient.trackTrace({ message: `Test Client exited with error. Error: ${err}` });
             });
 
-            telemetryClient.trackTrace({ message: `Started test client process. Url: ${url}` });
+            telemetryClient.trackTrace({ message: `Started test client process.` });
             p.push(new Promise((resolve) => process.on("close", resolve)));
         } catch (e) {
             console.error("Error in starting child process.");
             console.error(e);
 
-            telemetryClient.trackTrace({ message: `Error in starting test client. Url: ${url}` });
+            telemetryClient.trackTrace({ message: `Error in starting test client.` });
             telemetryClient.trackException({ exception: e });
         }
-
-        cnt = (cnt + 1) % 10;
     }
+
+    // Wait for all child processes to complete.
+    // TODO: Should have timeout to kill if its taking too much time.
     await Promise.all(p);
-    const currentdate_end = new Date();
-    const endDatetime = `Last Sync: `
-        + `${currentdate_end.getDate().toString()}`
-        + `/${(currentdate_end.getMonth() + 1).toString()}`
-        + `/${currentdate_end.getFullYear().toString()}`
-        + ` @ ${currentdate_end.getHours().toString()}`
-        + `:${currentdate_end.getMinutes().toString()}`
-        + `:${currentdate_end.getSeconds().toString()}`;
+
+    const endDatetime = `Last Sync: ${new Date().toLocaleString()}`;
     console.log(`Start Time : ${startDatetime}`);
     console.log(`End Time : ${endDatetime}`);
 
@@ -426,6 +425,9 @@ main().catch(
         process.exitCode = EXIT_ERROR.UNKNOWN;
     },
 ).finally(() => {
+    if (process.exitCode !== EXIT_ERROR.SUCCESS) {
+        telemetryClient.trackTrace({ message: `Process exited with code: ${process.exitCode}` });
+    }
     telemetryClient.flush();
     applicationInsights.dispose();
 });
