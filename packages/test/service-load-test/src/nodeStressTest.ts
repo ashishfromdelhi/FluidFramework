@@ -31,8 +31,6 @@ import { pkgName, pkgVersion } from "./packageVersion";
 import { ITestConfig, ILoadTestConfig, ITestTenant } from "./testConfigFile";
 import { IRunConfig, fluidExport, ILoadTest } from "./loadTestDataStore";
 
-const USERS_PER_DOC = 10;
-
 const packageName = `${pkgName}@${pkgVersion}`;
 
 let telemetryClient: applicationInsights.TelemetryClient;
@@ -138,21 +136,23 @@ async function main(this: any) {
         .requiredOption("-p, --profile <profile>", "Which test profile to use from testConfig.json", "ci")
         .option("-u, --url <url>", "Load an existing data store rather than creating new")
         .option("-r, --runId <runId>", "run a child process with the given id. Requires --url option.")
-        .option("-d, --debug", "Debug child processes via --inspect-brk")
+        .option("-d, --debug", "Debug child processes via --inspect-brk", false)
         .option("-l, --log <filter>", "Filter debug logging. If not provided, uses DEBUG env variable.")
-        .option("-z, --numDoc <numDoc>", "If it is not provided then default value as 1 will be used.")
-        .option("-pid, --podId <podId>", "If it is not provided then default value as 1 will be used.")
+        .option("-z, --numDoc <numDoc>", "If it is not provided then default value as 1 will be used.", "1")
+        .option("-pid, --podId <podId>", "If it is not provided then default value as 1 will be used.", "1")
         .option("-tid, --testUid <testUid>", "If it is not provided then default value as uuid will be used.")
+        .option("-user, --numUsersPerDoc <numUsersPerDoc", "Number of users per doc. Default 10.", "10")
         .parse(process.argv);
     const tenantArg: string = commander.tenant;
     const profileArg: string = commander.profile;
     const url: string | undefined = commander.url;
     const runId: number | undefined = commander.runId === undefined ? undefined : parseInt(commander.runId, 10);
-    const debug: true | undefined = commander.debug;
+    const debug: boolean | undefined = commander.debug;
     const log: string | undefined = commander.log;
-    const numDoc: number | undefined = commander.numDoc === undefined ? 1 : parseInt(commander.numDoc, 10);
-    const podId: number | undefined = commander.podId === undefined ? 1 : parseInt(commander.podId, 10);
+    const numDoc: number = parseInt(commander.numDoc, 10);
+    const podId: number = parseInt(commander.podId, 10);
     const testUid: string = commander.testUid === undefined ? uuidv4() : commander.testUid;
+    const numUsersPerDoc: number = parseInt(commander.numUsersPerDoc, 10);
 
     let config: ITestConfig;
     try {
@@ -226,7 +226,7 @@ async function main(this: any) {
         // When runId is not specified, this is the orchestrator process which will spawn child test runners.
         result = await orchestratorProcess(loginInfo,
             { ...profile, name: profileArg, tenetFriendlyName: tenantArg },
-            { testUid, urlList, numDoc, podId, debug });
+            { testUid, urlList, numDoc, podId, debug, numUsersPerDoc });
     }
     process.exitCode = result;
 }
@@ -288,14 +288,19 @@ async function runnerProcess(
 async function orchestratorProcess(
     loginInfo: IOdspTestLoginInfo,
     profile: ILoadTestConfig & { name: string } & { tenetFriendlyName: string },
-    args: { testUid: string, urlList?: string[], numDoc?: number, podId?: number, debug?: true },
+    args: {
+        testUid: string,
+        urlList: string[],
+        numDoc: number,
+        podId: number,
+        debug: boolean | undefined,
+        numUsersPerDoc: number
+    },
 ): Promise<number> {
     const startDatetime = `Last Sync: ${new Date().toLocaleString()}`;
-    const numDoc = args.numDoc === undefined ? 1 : args.numDoc;
-    const podId = args.podId === undefined ? 1 : args.podId;
-    console.log(`You are in orchestratorProcess ${numDoc}`);
+    console.log(`You are in orchestratorProcess ${args.numDoc}`);
 
-    telemetryClient.trackTrace({ message: `Starting Orchestrator Process. Docs count: ${numDoc}` });
+    telemetryClient.trackTrace({ message: `Starting Orchestrator Process. Docs count: ${args.numDoc}` });
 
     // const driveIds: string[] = [];
     // const docUrls: string[] = [];
@@ -333,27 +338,27 @@ async function orchestratorProcess(
     const p: Promise<void>[] = [];
 
     // Calculate doc ranges for test
-    const offset = Math.floor((podId - 1) / USERS_PER_DOC) * numDoc;
+    const offset = Math.floor((args.podId - 1) / args.numUsersPerDoc) * args.numDoc;
 
-    if (!args.urlList) {
+    if (args.urlList.length === 0) {
         throw new Error("No URL list provided.");
     }
 
     // Avoid repetation of URLs
-    if (offset < 0 || offset > (args.urlList?.length - numDoc)) {
+    if (offset < 0 || offset > (args.urlList?.length - args.numDoc)) {
         throw new Error(`Incorrect number of documents. Offset: ${offset} URL Cnt: ${args.urlList?.length}`);
     }
 
     // This is to round robin the start of user for doc.
-    const startIndex = (podId - 1) % USERS_PER_DOC;
+    const startIndex = (args.podId - 1) % args.numUsersPerDoc;
 
     // Trigger individual test clients
-    for (let docIndex = 0; docIndex < numDoc; docIndex++) {
+    for (let docIndex = 0; docIndex < args.numDoc; docIndex++) {
         // Wait for random time 5-15sec.
         await new Promise((r) => setTimeout(r, 5000 + (10000 * Math.random())));
 
         // Circular list
-        const url = args.urlList[offset + (startIndex + docIndex) % numDoc];
+        const url = args.urlList[offset + (startIndex + docIndex) % args.numDoc];
 
         // console.log(`user auth within clients loop  : ${loginInfo.username}`);
         const estRunningTimeMin = Math.floor(2 * profile.totalSendCount /
@@ -367,8 +372,8 @@ async function orchestratorProcess(
             "./dist/nodeStressTest.js",
             "--tenant", profile.tenetFriendlyName,
             "--profile", profile.name,
-            "--runId", (docIndex).toString(),
-            "--podId", podId.toString(),
+            "--runId", docIndex.toString(),
+            "--podId", args.podId.toString(),
             "--url", url,
             "--testUid", args.testUid];
         if (args.debug) {

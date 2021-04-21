@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: lg-fluidapp
-        image: loadgeneration.azurecr.io/odsprespond/load-generator-fluidapp-vivek:latest
+        image: loadgeneration.azurecr.io/odsprespond/load-generator-fluidapp-test:latest
         imagePullPolicy: Always
         command: ["/bin/sh"]
         args: ["-c", "while true; do echo done deploying lg-fluidapp; sleep 3600;done"]

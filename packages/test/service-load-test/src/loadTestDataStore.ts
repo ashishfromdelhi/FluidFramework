@@ -8,6 +8,8 @@ import {
     DataObject,
     DataObjectFactory,
 } from "@fluidframework/aqueduct";
+import { ISequencedClient } from "@fluidframework/protocol-definitions";
+import * as applicationInsights from "applicationinsights";
 import { ILoadTestConfig } from "./testConfigFile";
 
 export interface IRunConfig {
@@ -21,11 +23,26 @@ export interface ILoadTest {
 
 const wait = async (timeMs: number) => new Promise((resolve) => setTimeout(resolve, timeMs));
 
+const IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+
+enum State {
+    NO_STARTED = 0,
+    PAUSED = 1,
+    RUNNING = 2,
+    STOPPED = 3,
+}
+
 class LoadTestDataStore extends DataObject implements ILoadTest {
     public static DataStoreName = "StressTestDataStore";
+
     private opCount = 0;
+    private prevOpCount = 0;
     private sentCount = 0;
-    private state: string = "not started";
+    private prevSentCount = 0;
+    private state: State = State.NO_STARTED;
+    private lastSentMs = 0;
+    private readonly telemetryClient = applicationInsights.defaultClient;
+
     protected async hasInitialized() {
         this.root.on("op", () => {
             this.opCount++;
@@ -34,9 +51,9 @@ class LoadTestDataStore extends DataObject implements ILoadTest {
 
     public async pause(timeMs: number) {
         const startTimeMs = Date.now();
-        this.state = "paused";
+        this.state = State.PAUSED;
         await wait(timeMs);
-        this.state = "running";
+        this.state = State.RUNNING;
         return Date.now() - startTimeMs;
     }
 
@@ -53,6 +70,28 @@ class LoadTestDataStore extends DataObject implements ILoadTest {
             ` run time: ${runningMin.toFixed(2).toString().padStart(5)} min`,
             ` total time: ${totalMin.toFixed(2).toString().padStart(5)} min`,
         );
+
+        this.telemetryClient.trackMetric({
+            name: "Fluid Operations Received",
+            value: (this.opCount - this.prevOpCount),
+        });
+        this.telemetryClient.trackMetric({
+            name: "Fluid Operations Sent",
+            value: (this.sentCount - this.prevSentCount),
+        });
+
+        if (this.prevSentCount === this.sentCount) {
+            if ((Date.now() - this.lastSentMs) > IDLE_TIMEOUT_MS) {
+                const msg = `Timeout error: no ops sent in ${Date.now() - this.lastSentMs} ms`;
+                this.telemetryClient.trackTrace({ message: msg });
+                throw new Error(msg);
+            }
+        } else {
+            this.lastSentMs = Date.now();
+        }
+
+        this.prevOpCount = this.opCount;
+        this.prevSentCount = this.sentCount;
     }
 
     public async run(config: IRunConfig) {
@@ -61,8 +100,12 @@ class LoadTestDataStore extends DataObject implements ILoadTest {
         await new Promise<void>((resolve) => {
             let memberCount = this.context.getQuorum().getMembers().size;
             if (memberCount >= config.testConfig.numClients) { resolve(); }
-            this.context.getQuorum().on("addMember", () => {
+            this.context.getQuorum().on("addMember", (clientId: string, details: ISequencedClient) => {
                 memberCount++;
+                this.telemetryClient.trackTrace({
+                    message: `Quorum member added.`,
+                    properties: { clientId, sequence: details.sequenceNumber, userId: details.client.user.id },
+                });
                 if (memberCount >= config.testConfig.numClients) { resolve(); }
             });
         });
@@ -86,16 +129,17 @@ class LoadTestDataStore extends DataObject implements ILoadTest {
 
         let t: NodeJS.Timeout;
         const printProgress = () => {
-            if (this.state !== "paused") {
-                this.printStatus(config, startTimeMs, runningStartTimeMs);
+            this.printStatus(config, startTimeMs, runningStartTimeMs);
+            if (this.state !== State.STOPPED) {
+                t = setTimeout(printProgress, config.testConfig.progressIntervalMs);
             }
-            t = setTimeout(printProgress, config.testConfig.progressIntervalMs);
         };
         t = setTimeout(printProgress, config.testConfig.progressIntervalMs);
 
         const clientSendCount = config.testConfig.totalSendCount / config.testConfig.numClients;
         const opsPerCycle = config.testConfig.opRatePerMin * cycleMs / 60000;
         const opsGapMs = cycleMs / opsPerCycle;
+        this.lastSentMs = Date.now();
         while (this.sentCount < clientSendCount) {
             await this.runStep();
             // Send cycle worth of Ops
@@ -108,7 +152,7 @@ class LoadTestDataStore extends DataObject implements ILoadTest {
             }
         }
 
-        this.state = "stopped";
+        this.state = State.STOPPED;
         clearTimeout(t);
 
         this.printStatus(config, startTimeMs, runningStartTimeMs);

@@ -3,14 +3,21 @@ function RunLoadTest {
     [CmdletBinding()]
     Param(
         [Parameter(Mandatory = $true)]
-        [string]$NumOfPods,
+        [int]$NumOfPods,
 		[Parameter(Mandatory = $true)]
-        [string]$NumOfDocsPerPod,
+        [int]$NumOfDocsPerPod,
 		[Parameter(Mandatory = $true)]
         [string]$Profile,
-		[Parameter(Mandatory = $true)]
-        [string]$Namespace
+        [Parameter(Mandatory = $false)]
+        [int]$NumOfUsersPerDoc = 10,
+		[Parameter(Mandatory = $false)]
+        [string]$Namespace = 'odsp-perf-lg-fluid'
     )
+
+    if ( ( $NumOfPods -gt 100 ) -and ( $Namespace -ne 'odsp-perf-lg-fluid' ) ) {
+        Write-Host "Large tests should be run with namespace odsp-perf-lg-fluid. Exiting."
+        return
+    }
 
     Write-Host "Starting RunLoadTest NumOfPods: $NumOfPods, NumOfDocsPerPod: $NumOfDocsPerPod, Profile: $Profile"
 	kubectl config set-context --current --namespace=$Namespace | out-null
@@ -18,7 +25,7 @@ function RunLoadTest {
 	#GenerateConfig -PodName $PodName -NumOfDocsPerTenant 2
 	#DownloadConfig -PodName $PodName
 	#UploadConfig
-	RunTest -NumOfDocsPerPod $NumOfDocsPerPod -Profile $Profile -Namespace $Namespace
+	RunTest -NumOfDocsPerPod $NumOfDocsPerPod -Profile $Profile -Namespace $Namespace -NumOfUsersPerDoc $NumOfUsersPerDoc -NumOfPods $NumOfPods
 }
 
 function CreateInfra{
@@ -26,7 +33,7 @@ function CreateInfra{
 	[CmdletBinding()]
     Param(
         [Parameter(Mandatory = $true)]
-        [string]$NumOfPods,
+        [int]$NumOfPods,
 		[Parameter(Mandatory = $true)]
         [string]$Namespace
     )
@@ -47,13 +54,17 @@ workflow RunTest{
 	[CmdletBinding()]
     Param(
 		[Parameter(Mandatory = $true)]
-        [string]$NumOfDocsPerPod,
+        [int]$NumOfDocsPerPod,
+        [Parameter(Mandatory = $true)]
+        [int]$NumOfPods,
+        [Parameter(Mandatory = $true)]
+        [int]$NumOfUsersPerDoc,
 		[Parameter(Mandatory = $true)]
         [string]$Profile,
 		[Parameter(Mandatory = $true)]
         [string]$Namespace
     )
-	$Tenants = @('21220','1520','0900','0001','0002','0312','0420','0500','0920','0220')
+	$Tenants = @('21220','1520','0900','0001','0002','0312','0420','0500','0920','0220')[0..($NumOfPods/$NumOfUsersPerDoc - 1)]
 	$Pods = $(kubectl get pods -n $Namespace --field-selector status.phase=Running -o json | ConvertFrom-Json).items
     $testUid = [guid]::NewGuid()
     [int]$PodsCount = $Pods.count
@@ -64,7 +75,7 @@ workflow RunTest{
 		$TenantIndex = ($i-1) % $Tenants.count
 		$TenantIdentifier = $Tenants[$TenantIndex]
 		$PodId=[int][Math]::Floor(($i + $Tenants.count -1)/$Tenants.count)
-        $Command = "node ./dist/nodeStressTest.js --tenant $TenantIdentifier --profile $Profile --numDoc $NumOfDocsPerPod --podId $PodId --testUid $testUid > testscenario.logs 2>&1 &"
+        $Command = "node ./dist/nodeStressTest.js --tenant $TenantIdentifier --profile $Profile --numDoc $NumOfDocsPerPod --numUsersPerDoc $NumOfUsersPerDoc --podId $PodId --testUid $testUid > testscenario.logs 2>&1 &"
         Write-Output "Exec Command: $Command on Pod: $PodName"
 		kubectl exec $PodName -n $Namespace -- bash -c $Command
         Write-Output "Exec Command DONE: on Pod: $PodName"
