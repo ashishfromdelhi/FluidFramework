@@ -104,9 +104,15 @@ class LoadTestDataStore extends DataObject implements ILoadTest {
                 memberCount++;
                 this.telemetryClient.trackTrace({
                     message: `Quorum member added.`,
-                    properties: { clientId, sequence: details.sequenceNumber, userId: details.client.user.id },
+                    properties: {
+                        quorumClientId: clientId,
+                        quorumSequence: details.sequenceNumber,
+                        quorumUserId: details.client.user.id,
+                    },
                 });
-                if (memberCount >= config.testConfig.numClients) { resolve(); }
+                if (memberCount >= config.testConfig.numClients) {
+                    resolve();
+                }
             });
         });
         console.log(`${config.runId.toString().padStart(3)}> begin`);

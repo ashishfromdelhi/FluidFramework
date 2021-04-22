@@ -195,8 +195,8 @@ async function main(this: any) {
         return;
     }
 
-    telemetryClient.commonProperties.TestUid = testUid;
-    telemetryClient.commonProperties.user = loginInfo.username;
+    telemetryClient.commonProperties.testUid = testUid;
+    telemetryClient.commonProperties.userId = loginInfo.username;
 
     if (log !== undefined) {
         process.env.DEBUG = log;
@@ -430,9 +430,11 @@ main().catch(
         process.exitCode = EXIT_ERROR.UNKNOWN;
     },
 ).finally(() => {
-    if (process.exitCode !== EXIT_ERROR.SUCCESS) {
-        telemetryClient.trackTrace({ message: `Process exited with code: ${process.exitCode}` });
-    }
-    telemetryClient.flush();
-    applicationInsights.dispose();
+    telemetryClient.trackTrace({ message: `Process exited with code: ${process.exitCode}` });
+    telemetryClient.flush({
+        callback: () => {
+            applicationInsights.dispose();
+            process.exit();
+        },
+    });
 });
