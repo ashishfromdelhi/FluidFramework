@@ -119,7 +119,9 @@ function createLoader(loginInfo: IOdspTestLoginInfo) {
 
 async function load(loginInfo: IOdspTestLoginInfo, url: string) {
     const loader = createLoader(loginInfo);
+    console.log("createLoader Succesfully run");
     const respond = await loader.request({ url });
+    console.log("Loader requested");
     // TODO: Error checking
     return respond.value as ILoadTest;
 }
@@ -252,8 +254,9 @@ async function runnerProcess(
             testConfig: profile,
         };
         const stressTest = await load(loginInfo, url);
-
+        console.log("Load is done");
         await stressTest.run(runConfig);
+        console.log("stress Run is done");
         telemetryClient.trackMetric({ name: "Test Client Successful", value: 1 });
         telemetryClient.trackTrace({ message: `${runId}> Completed test client with url: ${url}` });
         console.log(`${runId.toString().padStart(3)}> exit`);
@@ -367,7 +370,6 @@ async function orchestratorProcess(
         // console.log(`Selected test profile: ${profile.name}`);
         console.log(`Estimated run time: ${estRunningTimeMin} minutes\n`);
         console.log(` ${url}  ^^^^^^^^^^^^^^^ ${loginInfo.username}`);
-
         const childArgs: string[] = [
             "./dist/nodeStressTest.js",
             "--tenant", profile.tenetFriendlyName,
@@ -381,14 +383,14 @@ async function orchestratorProcess(
             // 9229 is the default and will be used for the root orchestrator process
             childArgs.unshift(`--inspect-brk=${debugPort}`);
         }
-
+        console.log("ChildArgs are created");
         try {
             const process = child_process.spawn(
                 "node",
                 childArgs,
                 { stdio: "inherit" },
             );
-
+            console.log("process created");
             process.on("exit", (code, signal) => {
                 telemetryClient.trackTrace({
                     message: `Test Client exited. Code: ${code} Signal: ${signal}`,
@@ -400,7 +402,7 @@ async function orchestratorProcess(
 
                 telemetryClient.trackTrace({ message: `Test Client exited with error. Error: ${err}` });
             });
-
+            console.log("process termination handler added");
             telemetryClient.trackTrace({ message: `Started test client process.` });
             p.push(new Promise((resolve) => process.on("close", resolve)));
         } catch (e) {
@@ -415,7 +417,6 @@ async function orchestratorProcess(
     // Wait for all child processes to complete.
     // TODO: Should have timeout to kill if its taking too much time.
     await Promise.all(p);
-
     const endDatetime = `Last Sync: ${new Date().toLocaleString()}`;
     console.log(`Start Time : ${startDatetime}`);
     console.log(`End Time : ${endDatetime}`);
