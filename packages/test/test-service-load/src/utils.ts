@@ -14,6 +14,7 @@ import { ChildLogger, TelemetryLogger } from "@fluidframework/telemetry-utils";
 import { ITelemetryBaseEvent } from "@fluidframework/common-definitions";
 import random from "random-js";
 import { IContainerRuntimeOptions } from "@fluidframework/container-runtime";
+import * as appinsights from "applicationinsights";
 import { pkgName, pkgVersion } from "./packageVersion";
 import { createFluidExport } from "./loadTestDataStore";
 import { ILoadTestConfig, ITestConfig } from "./testConfigFile";
@@ -54,6 +55,7 @@ class FileLogger extends TelemetryLogger implements ITelemetryBufferedLogger {
         this.logs = [];
         return baseFlushP;
     }
+
     send(event: ITelemetryBaseEvent): void {
         this.baseLogger?.send(event);
 
@@ -66,6 +68,52 @@ class FileLogger extends TelemetryLogger implements ITelemetryBufferedLogger {
         this.logs.push(event);
     }
 }
+
+class AppInsightsLogger extends TelemetryLogger implements ITelemetryBufferedLogger {
+    private readonly telemetryClient: appinsights.TelemetryClient;
+
+    public constructor(instrumentationKey: string, private readonly baseLogger?: ITelemetryBufferedLogger) {
+        super();
+
+        appinsights.setup(instrumentationKey).start();
+        this.telemetryClient = appinsights.defaultClient;
+    }
+
+    async flush(runInfo?: {url: string,  runId?: number}): Promise<void> {
+        const baseFlushP =  this.baseLogger?.flush();
+
+        const flushP = new Promise<void>((resolve) => {
+            this.telemetryClient.flush({
+                callback: () => resolve(),
+            });
+        });
+
+        if (baseFlushP) {
+            await Promise.all<void>([baseFlushP, flushP]);
+        } else {
+            await flushP;
+        }
+   }
+
+    send(event: ITelemetryBaseEvent): void {
+        this.baseLogger?.send(event);
+
+        event.Event_Time = Date.now();
+        this.telemetryClient.trackEvent({
+            name: event.eventName,
+            tagOverrides: {
+                category: event.category,
+            },
+            properties: event,
+        });
+    }
+}
+
+export const appinsightsLoggerP = async (instrumentationKey: string, baseLogger?: ITelemetryBufferedLogger) => {
+    return new LazyPromise<AppInsightsLogger>(async ()=>{
+        return new AppInsightsLogger(instrumentationKey, baseLogger);
+    });
+};
 
 export const loggerP = new LazyPromise<FileLogger>(async ()=>{
     if (process.env.FLUID_TEST_LOGGER_PKG_PATH) {

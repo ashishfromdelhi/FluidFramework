@@ -71,6 +71,7 @@
     "@fluidframework/test-drivers": "^0.38.4",
     "@fluidframework/test-utils": "^0.38.4",
     "@fluidframework/tool-utils": "^0.38.4",
+    "applicationinsights": "^1.8.10",
     "commander": "^5.1.0",
     "random-js": "^1.0.8"
   },

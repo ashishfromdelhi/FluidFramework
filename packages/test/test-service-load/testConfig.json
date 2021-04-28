@@ -15,10 +15,10 @@
             "readWriteCycleMs": 30000
         },
         "mini": {
-            "opRatePerMin": 60,
-            "progressIntervalMs": 5000,
-            "numClients": 2,
-            "totalSendCount": 30,
+            "opRatePerMin": 72,
+            "progressIntervalMs": 15000,
+            "numClients": 100,
+            "totalSendCount": 30000,
             "readWriteCycleMs": 10000
         },
         "debug": {

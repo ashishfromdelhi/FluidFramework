@@ -12,8 +12,9 @@ import { requestFluidObject } from "@fluidframework/runtime-utils";
 import { IRequestHeader } from "@fluidframework/core-interfaces";
 import { LoaderHeader } from "@fluidframework/container-definitions";
 import { IDocumentServiceFactory } from "@fluidframework/driver-definitions";
+import * as appinsights from "applicationinsights";
 import { ILoadTest, IRunConfig } from "./loadTestDataStore";
-import { createCodeLoader, createTestDriver, getProfile, loggerP, safeExit } from "./utils";
+import { createCodeLoader, createTestDriver, getProfile, appinsightsLoggerP, loggerP, safeExit } from "./utils";
 import { FaultInjectionDocumentServiceFactory } from "./faultInjectionDriver";
 import { generateLoaderOptions, generateRuntimeOptions } from "./optionsMatrix";
 
@@ -41,6 +42,7 @@ async function main() {
         .requiredOption("-s, --seed <number>", "Seed for this runners random number generator")
         .option("-l, --log <filter>", "Filter debug logging. If not provided, uses DEBUG env variable.")
         .option("-v, --verbose", "Enables verbose logging")
+        .option("-ik, --instrumentationKey <instrumentationKey>", "Azure app insight instrumentation key.")
         .parse(process.argv);
 
     const driver: TestDriverTypes = commander.driver;
@@ -50,6 +52,7 @@ async function main() {
     const log: string | undefined = commander.log;
     const verbose: boolean = commander.verbose ?? false;
     const seed: number = commander.seed;
+    const instrumentationKey: string | undefined = commander.instrumentationKey;
 
     const profile = getProfile(profileArg);
 
@@ -77,7 +80,8 @@ async function main() {
             randEng,
         },
         url,
-        seed);
+        seed,
+        instrumentationKey);
 
     await safeExit(result, url, runId);
 }
@@ -123,14 +127,20 @@ async function runnerProcess(
     runConfig: IRunConfig,
     url: string,
     seed: number,
+    instrumentationKey?: string,
 ): Promise<number> {
     try {
+        appinsights.setup(instrumentationKey).start();
+        const telemetryClient: appinsights.TelemetryClient = appinsights.defaultClient;
+
         const loaderOptions = generateLoaderOptions(seed);
         const containerOptions = generateRuntimeOptions(seed);
 
         const testDriver = await createTestDriver(driver, seed, runConfig.runId);
         const logger = ChildLogger.create(
-            await loggerP, undefined, {all: { runId: runConfig.runId, driverType: testDriver.type }});
+            instrumentationKey ? await appinsightsLoggerP(instrumentationKey, await loggerP) : await loggerP,
+            undefined,
+            {all: { runId: runConfig.runId, driverType: testDriver.type }});
 
         let iteration = 0;
         const iterator = factoryPermutations(
@@ -156,6 +166,55 @@ async function runnerProcess(
             container.resume();
             const test = await requestFluidObject<ILoadTest>(container,"/");
 
+            container.deltaManager.on("connect", (details) => {
+                telemetryClient.trackTrace({ message: "Client connected.", properties: {
+                    clientId: details.clientId,
+                    containerClientId: container.clientId ?? "",
+                } });
+            });
+            container.deltaManager.on("disconnect", (reason) => {
+                telemetryClient.trackTrace({ message: "Client disconnected.", properties: {
+                    reason,
+                    containerClientId: container.clientId ?? "",
+                } });
+            });
+
+            let submitOps = 0;
+            container.deltaManager.on("submitOp", (message) => {
+                if (message?.type === "op") {
+                    const contents = JSON.parse(message.contents);
+                    if (contents?.contents?.contents?.content?.contents?.type === "increment") {
+                        submitOps++;
+                    }
+                }
+            });
+
+            let receiveOps = 0;
+            container.deltaManager.on("op", (message) => {
+                if (message?.type === "op") {
+                    const contents = message.contents;
+                    if (contents?.contents?.contents?.content?.contents?.type === "increment") {
+                        receiveOps++;
+                    }
+                }
+            });
+
+            let t: NodeJS.Timeout | undefined;
+            const sendTelemetry = () => {
+                telemetryClient.trackMetric({name: "Fluid Operations Sent", value: submitOps, properties: {
+                    clientId: container.clientId ?? "",
+                } });
+                telemetryClient.trackMetric({name: "Fluid Operations Received", value: receiveOps, properties: {
+                    clientId: container.clientId ?? "",
+                } });
+
+                submitOps = 0;
+                receiveOps = 0;
+                t = setTimeout(sendTelemetry, runConfig.testConfig.progressIntervalMs);
+            };
+
+            sendTelemetry();
+
             scheduleContainerClose(container, runConfig);
             scheduleFaultInjection(documentServiceFactory, container, runConfig);
             try{
@@ -175,7 +234,12 @@ async function runnerProcess(
                 if(!container.closed) {
                     container.close();
                 }
+
+                sendTelemetry();
                 await loggerP.then(async (l)=>l.flush({url, runId: runConfig.runId}));
+                if (t !== undefined) {
+                    clearTimeout(t);
+                }
             }
         }
         return 0;
