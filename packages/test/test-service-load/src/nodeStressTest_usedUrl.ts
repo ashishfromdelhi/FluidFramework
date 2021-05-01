@@ -39,12 +39,9 @@ async function main() {
     const seed: number | undefined = commander.seed;
     const instrumentationKey: string | undefined = commander.instrumentationKey;
     const url: string | undefined = commander.url;
-    // const numDoc: number | undefined = commander.numDoc === undefined ? 1 : parseInt(commander.numDoc, 10);
+    const numDoc = commander.numDoc === undefined ? 1 : parseInt(commander.numDoc, 10);
+    const podId = commander.podId === undefined ? 1 : parseInt(commander.podId, 10);
     const profile = getProfile(profileArg);
-    let podId = 1;
-    if (commander.podId !== undefined) {
-        podId = parseInt(commander.podId,10);
-    }
     if (log !== undefined) {
         process.env.DEBUG = log;
     }
@@ -69,7 +66,7 @@ async function main() {
     const user_ind: number = podId % tenant.usernames.length;
     const user_ = tenant.usernames[user_ind];
     const password = passwords[user_];
-    console.log(`${podId} ==== ${tenant.usernames.length} ==== ${passwords[user_]}`);
+    console.log(`${podId} === ${numDoc} ==== ${tenant.usernames.length} ==== ${passwords[user_]}`);
     console.log(`${user_}  ${password}`);
     process.env.login__odsp__test__accounts = `{"${user_}":"${password}"}`;
     // process.env.login__odsp__test__accounts = "{\"${}\":\"\"}";
@@ -94,7 +91,7 @@ async function orchestratorProcess(
         + ` @ ${currentdate.getHours().toString()}`
         + `:${currentdate.getMinutes().toString()}`
         + `:${currentdate.getSeconds().toString()}`;
-    const seed = args.seed ?? Date.now();
+    const seed = Date.now();
     const testDriver = await createTestDriver(
         driver,
         seed,
