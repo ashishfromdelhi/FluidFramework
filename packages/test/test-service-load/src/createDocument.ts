@@ -107,7 +107,7 @@ async function orchestratorProcess(
         config.tenants[profile.tenantArgs]?.docUrls.push(url);
     }
     const data = JSON.stringify(config);
-    const name = `testConfigUser.json`;
+    const name = `${profile.tenantArgs}_testConfigUser.json`;
     console.log(`${name}`);
     fs.writeFileSync(name, data);
     const currentdate_end = new Date();
