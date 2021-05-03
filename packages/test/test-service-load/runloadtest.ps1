@@ -5,7 +5,7 @@ function RunLoadTest {
         [Parameter(Mandatory = $false)]
         [int]$NumOfDocs = 1,
 		[Parameter(Mandatory = $false)]
-        [string]$Profile = 'BaseScenario',
+        [string]$Profile = 'BaseScenario_2.5',
 		[Parameter(Mandatory = $false)]
         [string]$Namespace = 'odsp-perf-lg-fluid'
     )
@@ -72,6 +72,9 @@ workflow RunTest{
     Write-Output "Load Starting ${testUid}"
 
     foreach -parallel -ThrottleLimit 10 ($i in 1..$PodsCount) {
+        $rnd = Get-Random -Minimum 15 -Maximum 30
+        sleep $rnd
+
         $PodName = $Pods[$i - 1].metadata.name
         $TenantIndex = ($i-1) % $TenantsCount
         $TenantName = ($Tenants | Get-Member -MemberType NoteProperty)[$TenantIndex].Name

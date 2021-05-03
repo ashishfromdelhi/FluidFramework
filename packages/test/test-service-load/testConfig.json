@@ -28,12 +28,35 @@
             "totalSendCount": 30,
             "readWriteCycleMs": 10000
         },
-        "BaseScenario": {
-            "opRatePerMin": 72,
-            "progressIntervalMs": 10000,
+        "BaseScenario_2.5": {
+            "opRatePerMin": 30,
+            "progressIntervalMs": 20000,
             "numClients": 10,
-            "totalSendCount": 4500,
-            "readWriteCycleMs": 10000
+            "totalSendCount": 9000,
+            "readWriteCycleMs": 30000
+        },
+        "BaseScenario_5": {
+            "opRatePerMin": 60,
+            "progressIntervalMs": 20000,
+            "numClients": 10,
+            "totalSendCount": 9000,
+            "readWriteCycleMs": 30000
+        },
+        "BaseScenario_2.5_nofault": {
+            "opRatePerMin": 30,
+            "progressIntervalMs": 20000,
+            "numClients": 10,
+            "totalSendCount": 9000,
+            "readWriteCycleMs": 30000,
+            "noFaultInjection": true
+        },
+        "BaseScenario_5_nofault": {
+            "opRatePerMin": 60,
+            "progressIntervalMs": 20000,
+            "numClients": 10,
+            "totalSendCount": 9000,
+            "readWriteCycleMs": 30000,
+            "noFaultInjection": true
         }
     }
 }

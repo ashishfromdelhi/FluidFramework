@@ -162,8 +162,11 @@ async function runnerProcess(
 
             telementryCleanup = await setAppInsightsTelemetry(container, runConfig, url);
 
-            scheduleContainerClose(container, runConfig);
-            scheduleFaultInjection(documentServiceFactory, container, runConfig);
+            if (!(runConfig.testConfig.noFaultInjection)) {
+                scheduleContainerClose(container, runConfig);
+                scheduleFaultInjection(documentServiceFactory, container, runConfig);
+            }
+
             try{
                 printProgress(runConfig);
                 printStatus(runConfig, `running`);

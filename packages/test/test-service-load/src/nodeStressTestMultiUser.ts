@@ -130,6 +130,8 @@ async function orchestratorProcess(
         runnerArgs.push(childArgs);
     }
     try {
+        await new Promise<void>((resolve) => setTimeout(resolve, 5000 + Math.random() * 10000));
+
         const startIndex = Math.floor(Math.random() * userNames.length);
         await Promise.all(runnerArgs.map(async (childArgs, index) => {
             const userName = userNames[(index + startIndex) % userNames.length];
