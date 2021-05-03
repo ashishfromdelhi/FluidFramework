@@ -27,6 +27,13 @@
             "numClients": 1,
             "totalSendCount": 30,
             "readWriteCycleMs": 10000
+        },
+        "BaseScenario": {
+            "opRatePerMin": 72,
+            "progressIntervalMs": 10000,
+            "numClients": 10,
+            "totalSendCount": 4500,
+            "readWriteCycleMs": 10000
         }
     }
 }
