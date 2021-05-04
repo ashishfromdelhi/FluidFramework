@@ -36,10 +36,10 @@
             "readWriteCycleMs": 30000
         },
         "BaseScenario_5": {
-            "opRatePerMin": 60,
+            "opRatePerMin": 68,
             "progressIntervalMs": 20000,
             "numClients": 10,
-            "totalSendCount": 9000,
+            "totalSendCount": 18000,
             "readWriteCycleMs": 30000
         },
         "BaseScenario_2.5_nofault": {
@@ -51,10 +51,10 @@
             "noFaultInjection": true
         },
         "BaseScenario_5_nofault": {
-            "opRatePerMin": 60,
+            "opRatePerMin": 68,
             "progressIntervalMs": 20000,
             "numClients": 10,
-            "totalSendCount": 9000,
+            "totalSendCount": 18000,
             "readWriteCycleMs": 30000,
             "noFaultInjection": true
         }

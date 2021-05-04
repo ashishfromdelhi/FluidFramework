@@ -71,9 +71,11 @@ workflow RunTest{
 
     Write-Output "Load Starting ${testUid}"
 
+    $Started = 0
+
     foreach -parallel -ThrottleLimit 10 ($i in 1..$PodsCount) {
-        $rnd = Get-Random -Minimum 15 -Maximum 30
-        sleep $rnd
+        $SleepTime = Get-Random -Minimum 5 -Maximum 30
+        sleep $SleepTime
 
         $PodName = $Pods[$i - 1].metadata.name
         $TenantIndex = ($i-1) % $TenantsCount
@@ -91,9 +93,25 @@ workflow RunTest{
 
         $Command = "FLUID_TEST_UID='$TestUid' node ./dist/nodeStressTestMultiUser.js -p $Profile > testscenario.logs 2>&1 &"
         Write-Output "Exec Command: $Command on Pod: $PodName"
-		kubectl exec $PodName -n $Namespace -- bash -c $Command
+
+        kubectl exec $PodName -n $Namespace -- bash -c $Command
+
+        kubectl exec $PodName -n $Namespace -- bash -c "ps -aux | grep node | grep -v grep"
+        if ($LastExitCode) {
+            Write-Error "Error in starting process on pod ${PodName}. Trying once more."
+
+            kubectl exec $PodName -n $Namespace -- bash -c $Command
+            kubectl exec $PodName -n $Namespace -- bash -c "ps -aux | grep node | grep -v grep"
+            if ($LastExitCode) {
+                Write-Error "Error in starting process on pod ${PodName}. Retry failed. Exiting"
+                Exit 1
+            }
+        }
+
+        $workflow:Started++
+
         Write-Output "Exec Command DONE: on Pod: $PodName"
     }
 
-	Write-Output "Load Submitted"
+	Write-Output "Load Submitted. Started ${Started} pods. TestUid: ${TestUid}"
 }
