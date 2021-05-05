@@ -90,6 +90,7 @@ export async function setAppInsightsTelemetry(container: Container, runConfig: I
                 connectedlientId: details.clientId,
                 clientId: container.clientId ?? "",
                 runId: runConfig.runId,
+                podId: runConfig.podId,
                 url,
                 userName: getUserName(container),
             },
@@ -102,6 +103,7 @@ export async function setAppInsightsTelemetry(container: Container, runConfig: I
                 reason,
                 clientId: container.clientId ?? "",
                 runId: runConfig.runId,
+                podId: runConfig.podId,
                 url,
                 userName: getUserName(container),
             },
@@ -140,6 +142,7 @@ export async function setAppInsightsTelemetry(container: Container, runConfig: I
                 name: "Fluid Operations Sent", value: submitOps, properties: {
                     clientId: container.clientId ?? "",
                     runId: runConfig.runId,
+                    podId: runConfig.podId,
                     url,
                     userName: getUserName(container),
                 },
@@ -150,6 +153,7 @@ export async function setAppInsightsTelemetry(container: Container, runConfig: I
                 name: "Fluid Operations Received", value: receiveOps, properties: {
                     clientId: container.clientId ?? "",
                     runId: runConfig.runId,
+                    podId: runConfig.podId,
                     url,
                     userName: getUserName(container),
                 },
@@ -160,6 +164,7 @@ export async function setAppInsightsTelemetry(container: Container, runConfig: I
                 name: "Doc Changes Sent", value: submitIncrementOps, properties: {
                     clientId: container.clientId ?? "",
                     runId: runConfig.runId,
+                    podId: runConfig.podId,
                     url,
                     userName: getUserName(container),
                 },
@@ -170,6 +175,7 @@ export async function setAppInsightsTelemetry(container: Container, runConfig: I
                 name: "Doc Changes Received", value: receiveIncrementOps, properties: {
                     clientId: container.clientId ?? "",
                     runId: runConfig.runId,
+                    podId: runConfig.podId,
                     url,
                     userName: getUserName(container),
                 },

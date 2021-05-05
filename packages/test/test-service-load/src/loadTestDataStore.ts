@@ -19,6 +19,7 @@ import { ILoadTestConfig } from "./testConfigFile";
 
 export interface IRunConfig {
     runId: number,
+    podId: string,
     testConfig: ILoadTestConfig,
     verbose: boolean,
     randEng: random.Engine,

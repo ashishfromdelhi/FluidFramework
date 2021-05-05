@@ -43,12 +43,14 @@ async function main() {
         .requiredOption("-s, --seed <number>", "Seed for this runners random number generator")
         .option("-l, --log <filter>", "Filter debug logging. If not provided, uses DEBUG env variable.")
         .option("-v, --verbose", "Enables verbose logging")
+        .option("-pod, --podId <podId>", "PodId or PodName on which this test runs")
         .parse(process.argv);
 
     const driver: TestDriverTypes = commander.driver;
     const profileArg: string = commander.profile;
     const url: string = commander.url;
     const runId: number  = commander.runId;
+    const podId: string  = commander.podId;
     const log: string | undefined = commander.log;
     const verbose: boolean = commander.verbose ?? false;
     const seed: number = commander.seed;
@@ -74,6 +76,7 @@ async function main() {
         driver,
         {
             runId,
+            podId,
             testConfig: profile,
             verbose,
             randEng,

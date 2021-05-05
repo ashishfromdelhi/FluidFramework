@@ -15,6 +15,7 @@ async function main() {
         .requiredOption("-d, --driver <driver>", "Which test driver info to use", "odsp")
         .requiredOption("-p, --profile <profile>", "Which test profile to use from testConfig.json", "ci")
         .option("-id, --testId <testId>", "Load an existing data store rather than creating new")
+        .option("-pod, --podId <podId>", "PodId or PodName on which this test runs")
         .option("-s, --seed <number>", "Seed for this run")
         .option("-dbg, --debug", "Debug child processes via --inspect-brk")
         .option("-l, --log <filter>", "Filter debug logging. If not provided, uses DEBUG env variable.")
@@ -24,6 +25,7 @@ async function main() {
     const driver: TestDriverTypes = commander.driver;
     const profileArg: string = commander.profile;
     const testId: string | undefined = commander.testId;
+    const podId: string | undefined = commander.podId;
     const debug: true | undefined = commander.debug;
     const log: string | undefined = commander.log;
     const verbose: true | undefined = commander.verbose;
@@ -38,7 +40,7 @@ async function main() {
     await orchestratorProcess(
             driver,
             { ...profile, name: profileArg },
-            { testId, debug, verbose, seed });
+            { testId, podId, debug, verbose, seed });
 }
 /**
  * Implementation of the orchestrator process. Returns the return code to exit the process with.
@@ -46,7 +48,7 @@ async function main() {
 async function orchestratorProcess(
     driver: TestDriverTypes,
     profile: ILoadTestConfig & { name: string },
-    args: { testId?: string, debug?: true, verbose?: true, seed?: number },
+    args: { testId?: string, podId?: string, debug?: true, verbose?: true, seed?: number },
 ) {
     const seed = args.seed ?? Date.now();
 
@@ -73,6 +75,7 @@ async function orchestratorProcess(
             "--driver", driver,
             "--profile", profile.name,
             "--runId", i.toString(),
+            "--podId", (args.podId ? args.podId : "none"),
             "--url", url,
             "--seed", `0x${seed.toString(16)}`,
         ];

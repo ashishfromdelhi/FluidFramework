@@ -76,7 +76,7 @@ workflow RunTest{
             kubectl cp $using:ConfigFileName $using:RemoteFile
         }
 
-        $Command = "FLUID_TEST_UID='$TestUid' node ./dist/nodeStressTestMultiUser.js -p $Profile > testscenario.logs 2>&1 &"
+        $Command = "FLUID_TEST_UID='$TestUid' node ./dist/nodeStressTestMultiUser.js -p $Profile -pod $PodName > testscenario.logs 2>&1 &"
         Write-Output "Exec Command: $Command on Pod: $PodName"
         kubectl exec $PodName -n $Namespace -- bash -c $Command
         kubectl exec $PodName -n $Namespace -- bash -c "ps -aux | grep node | grep -v grep"
