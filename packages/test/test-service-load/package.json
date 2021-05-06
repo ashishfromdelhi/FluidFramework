@@ -73,7 +73,8 @@
     "@fluidframework/tool-utils": "^0.39.1",
     "applicationinsights": "^1.8.10",
     "commander": "^5.1.0",
-    "random-js": "^1.0.8"
+    "random-js": "^1.0.8",
+    "ps-node": "^0.1.6"
   },
   "devDependencies": {
     "@fluidframework/build-common": "^0.22.0",

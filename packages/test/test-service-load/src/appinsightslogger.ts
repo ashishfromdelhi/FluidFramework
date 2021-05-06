@@ -60,6 +60,10 @@ export class AppInsightsLogger extends TelemetryLogger implements ITelemetryBuff
     trackTrace(telemetry: appinsights.Contracts.TraceTelemetry): void {
         this.telemetryClient.trackTrace(telemetry);
     }
+
+    setCommonProperty(key: string, value: string) {
+        this.telemetryClient.commonProperties[key] = value;
+    }
 }
 
 const clientIdUserNameMap: { [clientId: string]: string } = {};
@@ -84,13 +88,14 @@ const getUserName = (container: Container) => {
 export async function setAppInsightsTelemetry(container: Container, runConfig: IRunConfig, url: string) {
     const telemetryClient = new AppInsightsLogger();
 
+    telemetryClient.setCommonProperty("runId", runConfig.runId.toString());
+    telemetryClient.setCommonProperty("url", url);
+
     container.deltaManager.on("connect", (details) => {
         telemetryClient.trackTrace({
             message: "Client connected.", properties: {
                 connectedlientId: details.clientId,
                 clientId: container.clientId ?? "",
-                runId: runConfig.runId,
-                url,
                 userName: getUserName(container),
             },
         });
@@ -101,8 +106,6 @@ export async function setAppInsightsTelemetry(container: Container, runConfig: I
             message: "Client disconnected.", properties: {
                 reason,
                 clientId: container.clientId ?? "",
-                runId: runConfig.runId,
-                url,
                 userName: getUserName(container),
             },
         });
@@ -139,8 +142,6 @@ export async function setAppInsightsTelemetry(container: Container, runConfig: I
             telemetryClient.trackMetric({
                 name: "Fluid Operations Sent", value: submitOps, properties: {
                     clientId: container.clientId ?? "",
-                    runId: runConfig.runId,
-                    url,
                     userName: getUserName(container),
                 },
             });
@@ -149,8 +150,6 @@ export async function setAppInsightsTelemetry(container: Container, runConfig: I
             telemetryClient.trackMetric({
                 name: "Fluid Operations Received", value: receiveOps, properties: {
                     clientId: container.clientId ?? "",
-                    runId: runConfig.runId,
-                    url,
                     userName: getUserName(container),
                 },
             });
@@ -159,8 +158,6 @@ export async function setAppInsightsTelemetry(container: Container, runConfig: I
             telemetryClient.trackMetric({
                 name: "Doc Changes Sent", value: submitIncrementOps, properties: {
                     clientId: container.clientId ?? "",
-                    runId: runConfig.runId,
-                    url,
                     userName: getUserName(container),
                 },
             });
@@ -169,8 +166,6 @@ export async function setAppInsightsTelemetry(container: Container, runConfig: I
             telemetryClient.trackMetric({
                 name: "Doc Changes Received", value: receiveIncrementOps, properties: {
                     clientId: container.clientId ?? "",
-                    runId: runConfig.runId,
-                    url,
                     userName: getUserName(container),
                 },
             });
