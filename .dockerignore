@@ -3,6 +3,8 @@
 **/lib
 **/nyc
 **/*.tsbuildinfo
+**/testUserConfig.json
+**/testTenantConfig.json
 
 .vscode
 kubernetes

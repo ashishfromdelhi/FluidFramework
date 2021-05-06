@@ -17,6 +17,8 @@ import { createCodeLoader, createTestDriver, getProfile, loggerP, safeExit } fro
 import { FaultInjectionDocumentServiceFactory } from "./faultInjectionDriver";
 import { generateLoaderOptions, generateRuntimeOptions } from "./optionsMatrix";
 
+import { setAppInsightsTelemetry } from "./appinsightslogger";
+
 function printStatus(runConfig: IRunConfig, message: string) {
     if(runConfig.verbose) {
         console.log(`${runConfig.runId.toString().padStart(3)}> ${message}`);
@@ -124,6 +126,8 @@ async function runnerProcess(
     url: string,
     seed: number,
 ): Promise<number> {
+    let telementryCleanup: () => void;
+
     try {
         const loaderOptions = generateLoaderOptions(seed);
         const containerOptions = generateRuntimeOptions(seed);
@@ -156,8 +160,13 @@ async function runnerProcess(
             container.resume();
             const test = await requestFluidObject<ILoadTest>(container,"/");
 
-            scheduleContainerClose(container, runConfig);
-            scheduleFaultInjection(documentServiceFactory, container, runConfig);
+            telementryCleanup = await setAppInsightsTelemetry(container, runConfig, url);
+
+            if (!(runConfig.testConfig.noFaultInjection)) {
+                scheduleContainerClose(container, runConfig);
+                scheduleFaultInjection(documentServiceFactory, container, runConfig);
+            }
+
             try{
                 printProgress(runConfig);
                 printStatus(runConfig, `running`);
@@ -175,6 +184,7 @@ async function runnerProcess(
                 if(!container.closed) {
                     container.close();
                 }
+                telementryCleanup();
                 await loggerP.then(async (l)=>l.flush({url, runId: runConfig.runId}));
             }
         }
