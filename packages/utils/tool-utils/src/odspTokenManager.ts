@@ -15,6 +15,7 @@ import {
     TokenRequestCredentials,
 } from "@fluidframework/odsp-doclib-utils";
 import jwtDecode from "jwt-decode";
+import { Mutex } from "async-mutex";
 import { debug } from "./debug";
 import { IAsyncCache, loadRC, saveRC, lockRC } from "./fluidToolRC";
 import { serverListenAndHandle, endResponse } from "./httpHelpers";
@@ -48,9 +49,16 @@ export type OdspTokenConfig = {
     redirectUriCallback?: (tokens: IOdspTokens) => Promise<string>;
 };
 
-export interface IOdspTokenManagerCacheKey { isPush: boolean; server: string; }
+export interface IOdspTokenManagerCacheKey {
+    readonly isPush: boolean;
+    readonly server: string;
+}
 
 const isValidToken = (token: string) => {
+    if (!token || token.length === 0) {
+        return false;
+    }
+
     const decodedToken = jwtDecode<any>(token);
     // Give it a 60s buffer
     return (decodedToken.exp - 60 >= (new Date().getTime() / 1000));
@@ -63,11 +71,19 @@ const cacheKeyToString = (key: IOdspTokenManagerCacheKey) => {
 export class OdspTokenManager {
     private readonly storageCache = new Map<string, IOdspTokens>();
     private readonly pushCache = new Map<string, IOdspTokens>();
+    private readonly cacheMutex = new Mutex();
+
     constructor(
         private readonly tokenCache?: IAsyncCache<IOdspTokenManagerCacheKey, IOdspTokens>,
     ) { }
 
     public async updateTokensCache(key: IOdspTokenManagerCacheKey, value: IOdspTokens) {
+        await this.cacheMutex.runExclusive(async () => {
+            await this.updateTokensCacheWithoutLock(key, value);
+        });
+    }
+
+    private async updateTokensCacheWithoutLock(key: IOdspTokenManagerCacheKey, value: IOdspTokens) {
         debug(`${cacheKeyToString(key)}: Saving tokens`);
         const memoryCache = key.isPush ? this.pushCache : this.storageCache;
         memoryCache.set(key.server, value);
@@ -167,38 +183,43 @@ export class OdspTokenManager {
         server: string,
         clientConfig: IClientConfig,
         tokenConfig: OdspTokenConfig,
-        forceRefresh,
-        forceReauth,
+        forceRefresh: boolean,
+        forceReauth: boolean,
     ): Promise<IOdspTokens> {
         const scope = isPush ? pushScope : getOdspScope(server);
         const cacheKey: IOdspTokenManagerCacheKey = { isPush, server };
         if (!forceReauth) {
-            // check the cache again under the lock (if it is there)
-            const tokensFromCache = await this.getTokenFromCache(cacheKey);
-            if (tokensFromCache) {
-                let canReturn = true;
-                if (forceRefresh || !isValidToken(tokensFromCache.accessToken)) {
-                    try {
-                        // This updates the tokens in tokensFromCache
-                        await refreshTokens(server, scope, clientConfig, tokensFromCache);
-                    } catch (error) {
-                        canReturn = false;
+            const tokens = await this.cacheMutex.runExclusive(async (): Promise<IOdspTokens | undefined> => {
+                // check the cache again under the lock (if it is there)
+                const tokensFromCache = await this.getTokenFromCache(cacheKey);
+                if (tokensFromCache) {
+                    let newToken: IOdspTokens;
+                    if (forceRefresh || !isValidToken(tokensFromCache.accessToken)) {
+                        try {
+                            // This updates the tokens in tokensFromCache
+                            newToken = await refreshTokens(server, scope, clientConfig, tokensFromCache);
+                            await this.updateTokensCacheWithoutLock(cacheKey, newToken);
+                            return newToken;
+                        } catch (error) {
+                            debug(`Error in refreshing token. ${error}`);
+                        }
+                    } else {
+                        debug(`${cacheKeyToString(cacheKey)}: Token reused from locked cache `);
                     }
-                    await this.updateTokensCache(cacheKey, tokensFromCache);
-                } else {
-                    debug(`${cacheKeyToString(cacheKey)}: Token reused from locked cache `);
                 }
-                if (canReturn) {
-                    await this.onTokenRetrievalFromCache(tokenConfig, tokensFromCache);
-                    return tokensFromCache;
-                }
+                return undefined;
+            });
+
+            if (tokens) {
+                await this.onTokenRetrievalFromCache(tokenConfig, tokens);
+                return tokens;
             }
         }
 
-        let tokens: IOdspTokens | undefined;
+        let newTokens: IOdspTokens | undefined;
         switch (tokenConfig.type) {
             case "password":
-                tokens = await this.acquireTokensWithPassword(
+                newTokens = await this.acquireTokensWithPassword(
                     server,
                     scope,
                     clientConfig,
@@ -207,7 +228,7 @@ export class OdspTokenManager {
                 );
                 break;
             case "browserLogin":
-                tokens = await this.acquireTokensViaBrowserLogin(
+                newTokens = await this.acquireTokensViaBrowserLogin(
                     getLoginPageUrl(server, clientConfig, scope, odspAuthRedirectUri),
                     server,
                     clientConfig,
@@ -220,9 +241,12 @@ export class OdspTokenManager {
                 unreachableCase(tokenConfig);
         }
 
-        await this.updateTokensCache(cacheKey, tokens);
+        if (!newTokens) {
+            throw new Error("Unable to get token from the server.");
+        }
 
-        return tokens;
+        await this.updateTokensCache(cacheKey, newTokens);
+        return newTokens;
     }
 
     private async acquireTokensWithPassword(

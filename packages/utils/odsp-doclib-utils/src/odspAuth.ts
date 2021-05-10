@@ -3,13 +3,14 @@
  * Licensed under the MIT License.
  */
 
+import { assert } from "@fluidframework/common-utils";
 import { getAadTenant } from "./odspDocLibUtils";
 import { throwOdspNetworkError } from "./odspErrorUtils";
 import { unauthPostAsync } from "./odspRequest";
 
 export interface IOdspTokens {
-    accessToken: string;
-    refreshToken: string;
+    readonly accessToken: string;
+    readonly refreshToken: string;
 }
 
 export interface IClientConfig {
@@ -68,8 +69,7 @@ export const getPushRefreshTokenFn = (server: string, clientConfig: IClientConfi
     getRefreshTokenFn(pushScope, server, clientConfig, tokens);
 export const getRefreshTokenFn = (scope: string, server: string, clientConfig: IClientConfig, tokens: IOdspTokens) =>
     async () => {
-        await refreshTokens(server, scope, clientConfig, tokens);
-        return tokens.accessToken;
+        return (await refreshTokens(server, scope, clientConfig, tokens)).refreshToken;
     };
 
 /**
@@ -110,28 +110,24 @@ export async function fetchTokens(
  * @param server - The server to auth against
  * @param scope - The desired oauth scope
  * @param clientConfig - Info about this client's identity
- * @param tokens - The tokens object to update with fresh tokens. Also provides the refresh token for the request
+ * @param tokens - The tokens object with refresh token
+ *
+ * @return Refreshed token object.
  */
 export async function refreshTokens(
     server: string,
     scope: string,
     clientConfig: IClientConfig,
     tokens: IOdspTokens,
-): Promise<void> {
-    // Clear out the old tokens while awaiting the new tokens
+): Promise<IOdspTokens> {
     const refresh_token = tokens.refreshToken;
-    tokens.accessToken = "";
-    tokens.refreshToken = "";
+    assert(tokens.refreshToken.length > 0, "No refresh token provided.");
 
     const credentials: TokenRequestCredentials = {
         grant_type: "refresh_token",
         refresh_token,
     };
-    const newTokens = await fetchTokens(server, scope, clientConfig, credentials);
-
-    // Instead of returning, update the passed in tokens object
-    tokens.accessToken = newTokens.accessToken;
-    tokens.refreshToken = newTokens.refreshToken;
+    return fetchTokens(server, scope, clientConfig, credentials);
 }
 
 /**
