@@ -9,7 +9,7 @@ function RunLoadTest {
 		[Parameter(Mandatory = $false)]
         [string]$Namespace = 'odsp-perf-lg-fluid',
         [Parameter(Mandatory = $false)]
-        [string]$TenantDocsFilePath = $null,
+        [string]$TenantDocsFilePath = '',
         [Parameter(Mandatory = $false)]
         [string]$TestUid = [guid]::NewGuid()
         
@@ -85,6 +85,7 @@ function CreateAndUploadConfig{
 		[Parameter(Mandatory = $true)]
         [string]$StorageAccountKey,
         [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
         [string]$TenantDocsFilePath
     )
 
@@ -96,7 +97,7 @@ function CreateAndUploadConfig{
     #       case a:  If we read file content and it doesn't have tenantDocUrls object then we throw error and return.
     #       case b : Proceed ahead for populating url in config file. 
     #   case b : If path doesn't exist then we throw error and exit.          
-    if($TenantDocsFilePath){
+    if($TenantDocsFilePath -ne ''){
         if((Test-Path $TenantDocsFilePath)){
             $TenantDocs = (Get-Content -Raw -Path $TenantDocsFilePath | ConvertFrom-Json).tenantDocUrls
             if(!$TenantDocs){
