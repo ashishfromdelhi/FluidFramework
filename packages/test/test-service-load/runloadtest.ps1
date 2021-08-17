@@ -12,7 +12,6 @@ function RunLoadTest {
         [string]$TenantDocsFilePath = '',
         [Parameter(Mandatory = $false)]
         [string]$TestUid = [guid]::NewGuid()
-        
     )
 
     if ( ( $NumOfDocs -gt 10 ) -and ( $Namespace -ne 'odsp-perf-lg-fluid' ) ) {
@@ -24,7 +23,6 @@ function RunLoadTest {
 
     $StorageAccountName = "fluidconfig"
 	$StorageAccountKey = $env:StorageAccountKey
-            
     $Profiles = Get-Content -Raw -Path .\testConfig.json | ConvertFrom-Json
     [int]$NumOfUsersPerDoc = $Profiles.profiles.$Profile.numClients
     Write-Host "NumOfDocs: $NumOfDocs, Profile: $Profile, NumOfUsersPerDoc: $NumOfUsersPerDoc"
@@ -51,9 +49,7 @@ function CreateInfra{
 		[Parameter(Mandatory = $true)]
         [string]$StorageAccountKey
         )
-
-	kubectl create namespace $Namespace
-
+    kubectl create namespace $Namespace
 	kubectl create secret generic fluid-config-store-secret --from-literal=azurestorageaccountname=$StorageAccountName --from-literal=azurestorageaccountkey=$StorageAccountKey -n $Namespace
 	$FluidPodsDesc = Get-Content -Path load-generator-fluid-app.yaml
 	$FluidPodsDesc -replace "{{FLUID_TEST_UID}}","$TestUid" -replace "{{TEST_PROFILE}}", "$Profile" | kubectl apply -n $Namespace -f -
@@ -97,15 +93,15 @@ function CreateAndUploadConfig{
     #       case a:  If we read file content and it doesn't have tenantDocUrls object then we throw error and return.
     #       case b : Proceed ahead for populating url in config file. 
     #   case b : If path doesn't exist then we throw error and exit.          
-    if($TenantDocsFilePath -ne ''){
-        if((Test-Path $TenantDocsFilePath)){
+    if ($TenantDocsFilePath -ne '') {
+        if ((Test-Path $TenantDocsFilePath)) {
             $TenantDocs = (Get-Content -Raw -Path $TenantDocsFilePath | ConvertFrom-Json).tenantDocUrls
-            if(!$TenantDocs){
-                Write-Error "File content of $TenantDocsFilePath is corrupted.Exiting..."
+            if (!$TenantDocs) {
+                Write-Error "File content of $TenantDocsFilePath is corrupted.Exiting... "
                 return
             }
         }else{
-            Write-Error "$TenantDocsFilePath file does not exist.Exiting..."
+            Write-Error "$TenantDocsFilePath file does not exist.Exiting... "
             return
         }   
     }     
@@ -115,8 +111,8 @@ function CreateAndUploadConfig{
     [int]$PodsCount = $Pods.count
 
     if ( $PodsCount -ne $NumOfDocs ) {
-       Write-Error "Number of pods not equal to number of docs"
-       return
+        Write-Error "Number of pods not equal to number of docs"
+        return
     }
     Write-Output "Starting pod's configuration creation at $(Get-Date)"
     #Hast table is maintained for storing index of url per tenant which can be used next time
@@ -136,7 +132,7 @@ function CreateAndUploadConfig{
         if($TenantDocs){
             $TenantDocUrls = $TenantDocs.$TenantId
             if($TenantDocUrls){
-                if ($TenantUrlIndexHt[$TenantId] -gt $TenantDocUrls.count-1) {
+                if ($TenantUrlIndexHt[$TenantId] -gt $TenantDocUrls.count - 1) {
                     #if there are not enough URLs remaining for the tenant, just exit then
                     Write-Error "Sufficient number of doc urls for tenant:$TenantId are not provided.Exiting..."
                     return                     
@@ -145,7 +141,7 @@ function CreateAndUploadConfig{
                 $TenantUrlIndexHt[$TenantId] = $TenantUrlIndexHt[$TenantId] + 1                
             }else{
                 #Here, for that particular tenant, no Doc urls have been provided in the given file
-                Write-Error "No doc urls are provided for tenant:$TenantId.Exiting..."
+                Write-Error "No doc urls are provided for tenant:$TenantId.Exiting... "
                 return
             }  
         }

@@ -36,25 +36,25 @@ const createLoginEnv = (userName: string, password: string) => `{"${userName}": 
 async function main() {
     commander
         .requiredOption("-d, --driver <driver>", "Which test driver info to use", "odsp")
-        .requiredOption("-n, --urlCount <number>", "Number of Urls per tenant required")
+        .requiredOption("-n, --docCount <number>", "Number of Urls per tenant required")
         .requiredOption("-f, --outputFileName <string>", "Name of file to which doc urls should be written")
         .parse(process.argv);
 
     const driver: TestDriverTypes = commander.driver;
-    const urlCount: number = commander.urlCount;
+    const docCount: number = commander.docCount;
     const outputFileName: string = commander.outputFileName;
     const testUsers = await getTestUsers();
     await createDocs(
         driver,
         testUsers,
-        urlCount,
+        docCount,
         outputFileName);
 }
 
 async function createDocs(
     driver: TestDriverTypes,
     testUsers: ITestUserConfig,
-    urlCount: number,
+    docCount: number,
     outputFileName: string,
 ) {
     console.log(`Writing doc urls in ${outputFileName}, Please wait....`);
@@ -67,11 +67,14 @@ async function createDocs(
         Object.keys(testUsers.tenants[tenantName]).forEach(function(key) {
             userNames.push(key);
         });
-        for(let i: number = 0; i < urlCount; i++) {
-            /* Randomly selecting a user credential and creating doc through it.
-            Can also be done incrementally, doen't matter. */
-            const userIndex = Math.floor(Math.random() * Object.keys(testUsers.tenants[tenantName]).length);
+        let userIndex = 0;
+        for (let i: number = 0; i < docCount; i++) {
+            if (userIndex > Object.keys(testUsers.tenants[tenantName]).length - 1) {
+                userIndex = 0;
+            }
+            console.log("userIndex val is ", userIndex);
             const userName = userNames[userIndex];
+            userIndex = userIndex + 1;
             const password: string = testUsers.tenants[tenantName][userName];
             process.env.login__odsp__test__accounts = createLoginEnv(userName, password);
             const testDriver = await createTestDriver(
