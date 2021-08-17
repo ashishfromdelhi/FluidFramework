@@ -67,12 +67,12 @@ async function createDocs(
         Object.keys(testUsers.tenants[tenantName]).forEach(function(key) {
             userNames.push(key);
         });
+        // userIndex has been used for the case when docCount is greater than number of user credentials
         let userIndex = 0;
         for (let i: number = 0; i < docCount; i++) {
             if (userIndex > Object.keys(testUsers.tenants[tenantName]).length - 1) {
                 userIndex = 0;
             }
-            console.log("userIndex val is ", userIndex);
             const userName = userNames[userIndex];
             userIndex = userIndex + 1;
             const password: string = testUsers.tenants[tenantName][userName];

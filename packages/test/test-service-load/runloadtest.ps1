@@ -48,7 +48,7 @@ function CreateInfra{
         [string]$StorageAccountName,
 		[Parameter(Mandatory = $true)]
         [string]$StorageAccountKey
-        )
+    )
     kubectl create namespace $Namespace
 	kubectl create secret generic fluid-config-store-secret --from-literal=azurestorageaccountname=$StorageAccountName --from-literal=azurestorageaccountkey=$StorageAccountKey -n $Namespace
 	$FluidPodsDesc = Get-Content -Path load-generator-fluid-app.yaml
