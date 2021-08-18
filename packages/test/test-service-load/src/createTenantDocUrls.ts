@@ -9,6 +9,10 @@ import { TestDriverTypes } from "@fluidframework/test-driver-definitions";
 import { createTestDriver, initialize} from "./utils";
 
 interface ITestUserConfig {
+    /* key/value description:
+     * Key    : Username for the client
+     * Value  : Password specific to that username
+     */
     [tenant: string]: Record<string, string>
 }
 
