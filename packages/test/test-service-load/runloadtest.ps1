@@ -97,13 +97,13 @@ function CreateAndUploadConfig{
         if ((Test-Path $TenantDocsFilePath)) {
             $TenantDocs = (Get-Content -Raw -Path $TenantDocsFilePath | ConvertFrom-Json).tenantDocUrls
             if (!$TenantDocs) {
-                Write-Error "File content of $TenantDocsFilePath is corrupted.Exiting... "
+                Write-Error "File content of $TenantDocsFilePath is corrupted. Exiting."
                 return
             }
         } else {
-            Write-Error "$TenantDocsFilePath file does not exist.Exiting... "
+            Write-Error "$TenantDocsFilePath file does not exist. Exiting."
             return
-        }   
+        }
     }     
     $TenantNames = $Tenants | Get-Member -MemberType NoteProperty | Select-Object -ExpandProperty Name
     $TenantsCount = $TenantNames.Count
@@ -134,14 +134,14 @@ function CreateAndUploadConfig{
             if ($TenantDocUrls) {
                 if ($TenantUrlIndexHt[$TenantId] -gt $TenantDocUrls.count - 1) {
                     #if there are not enough URLs remaining for the tenant, just exit then
-                    Write-Error "Sufficient number of doc urls for tenant:$TenantId are not provided.Exiting..."
+                    Write-Error "Sufficient number of doc urls for tenant:$TenantId are not provided. Exiting."
                     return                     
                 }
                 $DocUrlPath = $TenantDocUrls[$TenantUrlIndexHt[$TenantId]]
                 $TenantUrlIndexHt[$TenantId] = $TenantUrlIndexHt[$TenantId] + 1                
             } else {
                 #Here, for that particular tenant, no Doc urls have been provided in the given file
-                Write-Error "No doc urls are provided for tenant:$TenantId.Exiting... "
+                Write-Error "No doc urls are provided for tenant:$TenantId. Exiting."
                 return
             }  
         }

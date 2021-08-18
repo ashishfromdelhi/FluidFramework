@@ -13,11 +13,10 @@ interface ITestUserConfig {
 }
 
 async function getTestUsers() {
-    let config: ITestUserConfig;
     try {
-        config = JSON.parse(await new Promise<string>((resolve, reject) =>
+        const config: ITestUserConfig = JSON.parse(await new Promise<string>((resolve, reject) =>
             fs.readFile("./testTenantConfig.json", "utf8", (err, data) => {
-                if (!err) {
+                if (err !== undefined) {
                     resolve(data);
                 } else {
                     reject(err);
@@ -57,7 +56,7 @@ async function createDocs(
     docCount: number,
     outputFileName: string,
 ) {
-    console.log(`Writing doc urls in ${outputFileName}, Please wait....`);
+    console.log(`Writing doc urls in ${outputFileName}. Please wait.`);
     const seed = Date.now();
     const tenantNames: string[] = Object.keys(testUsers.tenants);
     const tenantUrlsData: {tenantDocUrls: {[tenant: string]: string[]}} = { tenantDocUrls: {}};
@@ -80,7 +79,7 @@ async function createDocs(
         tenantUrlsData.tenantDocUrls[tenantName] = urls;
     }
     fs.writeFileSync(outputFileName, JSON.stringify(tenantUrlsData, undefined, 2));
-    console.log("File has been written");
+    console.log("File has been written.");
     process.exit(0);
 }
 
