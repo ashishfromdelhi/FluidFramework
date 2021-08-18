@@ -64,17 +64,9 @@ async function createDocs(
     for (const tenantName of tenantNames) {
         const userNames: string[] = [];
         const urls: string[] = [];
-        Object.keys(testUsers.tenants[tenantName]).forEach(function(key) {
-            userNames.push(key);
-        });
-        // userIndex has been used for the case when docCount is greater than number of user credentials
-        let userIndex = 0;
+        Object.keys(testUsers.tenants[tenantName]).forEach((key)  => userNames.push(key));
         for (let i: number = 0; i < docCount; i++) {
-            if (userIndex > Object.keys(testUsers.tenants[tenantName]).length - 1) {
-                userIndex = 0;
-            }
-            const userName = userNames[userIndex];
-            userIndex = userIndex + 1;
+            const userName = userNames[i % userNames.length];
             const password: string = testUsers.tenants[tenantName][userName];
             process.env.login__odsp__test__accounts = createLoginEnv(userName, password);
             const testDriver = await createTestDriver(

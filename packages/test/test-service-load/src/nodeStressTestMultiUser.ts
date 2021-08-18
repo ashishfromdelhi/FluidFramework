@@ -15,6 +15,10 @@ import { createTestDriver, getProfile, initialize, safeExit } from "./utils";
 import { AppInsightsLogger } from "./appinsightslogger";
 
 interface ITestUserConfig {
+    /* Credentials' key/value description:
+     * Key    : Username for the client
+     * Value  : Password specific to that username
+     */
     credentials: Record<string, string>;
     rampup: number;
     docUrl: string;
@@ -104,14 +108,14 @@ async function orchestratorProcess(
         undefined,
         args.browserAuth);
     let url = "";
-    if(profile.testUsers.docUrl !== undefined && profile.testUsers.docUrl) {
+    if (profile.testUsers.docUrl !== undefined && profile.testUsers.docUrl) {
         // if docUrl is found from config file then reuse this document
         url = profile.testUsers.docUrl;
-    }else {
+    } else {
         // Create a new file if a testId wasn't provided
         url = args.testId !== undefined
-        ? await testDriver.createContainerUrl(args.testId)
-        : await initialize(testDriver, seed);
+            ? await testDriver.createContainerUrl(args.testId)
+            : await initialize(testDriver, seed);
     }
 
     telemetryClient.setCommonProperty("url", url);

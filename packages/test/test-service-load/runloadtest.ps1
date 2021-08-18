@@ -100,7 +100,7 @@ function CreateAndUploadConfig{
                 Write-Error "File content of $TenantDocsFilePath is corrupted.Exiting... "
                 return
             }
-        }else{
+        } else {
             Write-Error "$TenantDocsFilePath file does not exist.Exiting... "
             return
         }   
@@ -117,7 +117,7 @@ function CreateAndUploadConfig{
     Write-Output "Starting pod's configuration creation at $(Get-Date)"
     #Hast table is maintained for storing index of url per tenant which can be used next time
     $TenantUrlIndexHt = [hashtable]::new()
-    for($i = 0; $i -lt $TenantNames.length; $i++){
+    for ($i = 0; $i -lt $TenantNames.length; $i++) {
         $TenantUrlIndexHt[$TenantNames[$i]] = 0
     } 
     $TempPath = "\tmp"
@@ -129,9 +129,9 @@ function CreateAndUploadConfig{
         $TenantIndex = ($i-1) % $TenantsCount
         $TenantId = $TenantNames[$TenantIndex]
         $DocUrlPath = $null
-        if($TenantDocs){
+        if ($TenantDocs) {
             $TenantDocUrls = $TenantDocs.$TenantId
-            if($TenantDocUrls){
+            if ($TenantDocUrls) {
                 if ($TenantUrlIndexHt[$TenantId] -gt $TenantDocUrls.count - 1) {
                     #if there are not enough URLs remaining for the tenant, just exit then
                     Write-Error "Sufficient number of doc urls for tenant:$TenantId are not provided.Exiting..."
@@ -139,7 +139,7 @@ function CreateAndUploadConfig{
                 }
                 $DocUrlPath = $TenantDocUrls[$TenantUrlIndexHt[$TenantId]]
                 $TenantUrlIndexHt[$TenantId] = $TenantUrlIndexHt[$TenantId] + 1                
-            }else{
+            } else {
                 #Here, for that particular tenant, no Doc urls have been provided in the given file
                 Write-Error "No doc urls are provided for tenant:$TenantId.Exiting... "
                 return
